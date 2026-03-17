@@ -33,7 +33,7 @@ namespace DataGenerator.Data
             }
         }
 
-        internal async Task InsertDoctorSpecializations(List<(int doctorId,int specializationId)> newRelations)
+        public async Task InsertDoctorSpecializations(List<(int doctorId,int specializationId)> newRelations)
         {
             var sql = new StringBuilder();
             sql.Append("INSERT INTO doctor_specialization (doctor_id, specialization_id) VALUES ");

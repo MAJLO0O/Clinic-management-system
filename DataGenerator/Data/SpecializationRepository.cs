@@ -14,9 +14,9 @@ namespace DataGenerator.Data
         {
             _connectionString = connectionString;
         }
-        public async Task<List<int>> GetExistingSpecializationIds(string connectionString)
+        public async Task<List<int>> GetExistingSpecializationIds()
             {
-                using (var connection = DbConnectionFactory.CreateDbConnection(connectionString))
+                using (var connection = DbConnectionFactory.CreateDbConnection(_connectionString))
                 {
                     await connection.OpenAsync();
                     var sql = "select id from specialization";

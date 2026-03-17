@@ -16,7 +16,7 @@ namespace DataGenerator.Data
         {
             _connectionString = connectionString;
         }
-       
+
         public async Task InsertPatients(List<Patient> patients)
         {
             var sql = new StringBuilder();
@@ -26,21 +26,31 @@ namespace DataGenerator.Data
             using (var connection = DbConnectionFactory.CreateDbConnection(_connectionString))
             {
                 await connection.OpenAsync();
-               
-                    for (int i = 0; i < patients.Count; i++)
-                    {
-                        values.Add($"(@FirstName{i}, @LastName{i},@Pesel{i},@DateOfBirth{i},@PhoneNumber{i},@Email{i})");
 
-                        parameters.Add($"FirstName{i}", patients[i].FirstName);
-                        parameters.Add($"LastName{i}", patients[i].LastName);
-                        parameters.Add($"Pesel{i}", patients[i].Pesel);
-                        parameters.Add($"DateOfBirth{i}", patients[i].DateOfBirth);
-                        parameters.Add($"PhoneNumber{i}", patients[i].PhoneNumber);
-                        parameters.Add($"Email{i}", patients[i].Email);
-                    }
-                    sql.Append(string.Join(",", values));
-                    await connection.ExecuteAsync(sql.ToString(), parameters);
+                for (int i = 0; i < patients.Count; i++)
+                {
+                    values.Add($"(@FirstName{i}, @LastName{i},@Pesel{i},@DateOfBirth{i},@PhoneNumber{i},@Email{i})");
 
+                    parameters.Add($"FirstName{i}", patients[i].FirstName);
+                    parameters.Add($"LastName{i}", patients[i].LastName);
+                    parameters.Add($"Pesel{i}", patients[i].Pesel);
+                    parameters.Add($"DateOfBirth{i}", patients[i].DateOfBirth);
+                    parameters.Add($"PhoneNumber{i}", patients[i].PhoneNumber);
+                    parameters.Add($"Email{i}", patients[i].Email);
+                }
+                sql.Append(string.Join(",", values));
+                await connection.ExecuteAsync(sql.ToString(), parameters);
+
+            }
+        }
+        public async Task<List<int>> GetExistingPatientIds()
+        {
+            using (var connection = DbConnectionFactory.CreateDbConnection(_connectionString))
+            {
+                await connection.OpenAsync();
+                var sql = "select id from patient";
+                var patientIds = await connection.QueryAsync<int>(sql);
+                return patientIds.ToList();
             }
         }
     }

@@ -25,7 +25,7 @@ namespace DataGenerator.Data
         public async Task InsertDoctors(List<Doctor> doctors)
         {
             var sql = new StringBuilder();
-            sql.Append("INSERT INTO doctor (first_name, last_name,pesel,phone_number,email) VALUES ");
+            sql.Append("INSERT INTO doctor (first_name, last_name,pesel,phone_number,email,branch_id) VALUES ");
             var parameters = new DynamicParameters();
             List<string> values = new();
             using (var connection = DbConnectionFactory.CreateDbConnection(_connectionString))
@@ -33,26 +33,34 @@ namespace DataGenerator.Data
                 await connection.OpenAsync();
                 for (int i = 0; i < doctors.Count; i++)
                 {
-                    values.Add($"(@FirstName{i},@LastName{i},@Pesel{i},@PhoneNumber{i},@Email{i})");
+                    values.Add($"(@FirstName{i},@LastName{i},@Pesel{i},@PhoneNumber{i},@Email{i},@BranchId{i})");
 
                     parameters.Add($"FirstName{i}", doctors[i].FirstName);
                     parameters.Add($"LastName{i}", doctors[i].LastName);
                     parameters.Add($"Pesel{i}", doctors[i].Pesel);
                     parameters.Add($"PhoneNumber{i}", doctors[i].PhoneNumber);
                     parameters.Add($"Email{i}", doctors[i].Email);
-
-
+                    parameters.Add($"BranchId{i}", doctors[i].BranchId);
                 }
 
                 sql.Append(string.Join(",", values));
-                Console.WriteLine(sql.ToString());
                 await connection.ExecuteAsync(sql.ToString(), parameters);
             }
 
         }
-        public async Task<List<int>> GetExistingDoctorIdsWithoutSpecialization(string connectionString)
+        public async Task<List<int>> GetExistingDoctorsIds()
         {
-            using (var connection = DbConnectionFactory.CreateDbConnection(connectionString))
+            using (var connection = DbConnectionFactory.CreateDbConnection(_connectionString))
+            {
+                await connection.OpenAsync();
+                var sql = "select id from doctor";
+                var doctorsIds = await connection.QueryAsync<int>(sql);
+                return doctorsIds.ToList();
+            }
+        }
+        public async Task<List<int>> GetExistingDoctorIdsWithoutSpecialization()
+        {
+            using (var connection = DbConnectionFactory.CreateDbConnection(_connectionString))
             {
                 await connection.OpenAsync();
                 var sql = "select d.id from doctor d left join doctor_specialization ds on d.id = ds.doctor_id where ds.specialization_id is null";

@@ -27,5 +27,7 @@ namespace DataGenerator.Models
         [Required]
         public DateTime CreatedAt { get; set; }
         public DateTime? DeletedAt { get; set; }
+        [Required]
+        public int BranchId { get; set; }
     }
 }
