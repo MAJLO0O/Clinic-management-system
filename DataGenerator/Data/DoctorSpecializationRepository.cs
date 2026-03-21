@@ -52,7 +52,18 @@ namespace DataGenerator.Data
                     i++;
                 }
                 sql.Append(string.Join(",", values));
-                await connection.ExecuteAsync(sql.ToString(), parameters);
+                using var transaction = connection.BeginTransaction();
+                try
+                {
+                await connection.ExecuteAsync(sql.ToString(), parameters,transaction);
+                    transaction.Commit();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error inserting doctor-specialization relations: {ex.Message}");
+                    transaction.Rollback();
+                }
+
             }
         }
     }

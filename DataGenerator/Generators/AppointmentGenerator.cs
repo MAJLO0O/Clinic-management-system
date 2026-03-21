@@ -10,10 +10,10 @@ namespace DataGenerator.Generators
     public class AppointmentGenerator
     {
       
-         public DateTime GenerateRandomAppointment()
+         public DateTime GenerateRandomDateAppointment()
           {
             List<int> validMinutes = new List<int> { 0, 30 };
-            List<DateTime> validYears = new() { DateTime.Now, DateTime.Now.AddYears(1) };
+            List<DateTime> validYears = new() { DateTime.Now.AddYears(-1), DateTime.Now, DateTime.Now.AddYears(1) };
             int hour = Random.Shared.Next(8, 17);
             int minute = validMinutes[Random.Shared.Next(validMinutes.Count)];
             int year = validYears[Random.Shared.Next(validYears.Count)].Year;
@@ -28,7 +28,7 @@ namespace DataGenerator.Generators
             do
             {
                 doctorId = doctorIds[Random.Shared.Next(doctorIds.Count)];
-                startingDateTime = GenerateRandomAppointment();
+                startingDateTime = GenerateRandomDateAppointment();
             } while (existingAppointments.Contains((doctorId, startingDateTime)));
             existingAppointments.Add((doctorId, startingDateTime));
             int patientId = patientIds[Random.Shared.Next(patientIds.Count)];

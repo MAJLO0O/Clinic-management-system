@@ -39,7 +39,18 @@ namespace DataGenerator.Data
                     parameters.Add($"Email{i}", patients[i].Email);
                 }
                 sql.Append(string.Join(",", values));
-                await connection.ExecuteAsync(sql.ToString(), parameters);
+                using var transaction = connection.BeginTransaction();
+                try
+                {
+                    await connection.ExecuteAsync(sql.ToString(), parameters,transaction);
+                    transaction.Commit();
+                }
+                catch (Exception ex)
+                {
+                    transaction.Rollback();
+                    Console.WriteLine($"Error inserting patients: {ex.Message}");
+                }
+                
 
             }
         }

@@ -44,7 +44,18 @@ namespace DataGenerator.Data
                 }
 
                 sql.Append(string.Join(",", values));
-                await connection.ExecuteAsync(sql.ToString(), parameters);
+                using var transaction = connection.BeginTransaction();
+                try
+                {
+                    await connection.ExecuteAsync(sql.ToString(), parameters, transaction);
+                    transaction.Commit();
+                }
+                catch (Exception ex)
+                {
+                    transaction.Rollback();
+                    Console.WriteLine($"Error inserting doctors: {ex.Message}");
+                }
+
             }
 
         }
