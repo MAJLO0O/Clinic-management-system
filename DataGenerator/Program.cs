@@ -2,6 +2,7 @@
 using DataGenerator.Data;
 using DataGenerator.Generators;
 using DataGenerator.Models;
+using DataGenerator.Services;
 using Microsoft.Extensions.Configuration;
 
 var configuration = new ConfigurationBuilder()
@@ -12,39 +13,37 @@ var configuration = new ConfigurationBuilder()
 string connectionString = configuration.GetConnectionString("Postgres");
 
 
-DoctorGenereator doctorGenereator = new();
-PatientGenerator patientGenereator = new();
+DoctorGenereator doctorGenerator = new();
+PatientGenerator patientGenerator = new();
 DoctorSpecializationGenerator doctorSpecializationGenerator = new();
 AppointmentGenerator appointmentGenerator = new();
 MedicalRecordGenerator medicalRecordGenerator = new();
 PaymentGenerator paymentGenerator = new();
 
-DoctorRepository doctor = new (connectionString);
-PersonRepository person = new (connectionString);
-PatientRepository patient = new(connectionString);
-SpecializationRepository specialization = new(connectionString);
-BranchRepository branch = new(connectionString);
-DoctorSpecializationRepository doctorSpecialization = new(connectionString);
-AppointmentRepository appointment = new(connectionString);
-AppointmentStatusRepository appointmentStatus = new(connectionString);
-MedicalRecordRepository medicalRecord = new(connectionString);
-PaymentMethodRepository paymentMethod = new(connectionString);
-PaymentStatusRepository paymentStatus = new(connectionString);
-PaymentRepository payment = new(connectionString);
+DoctorRepository doctorRepository = new ();
+PersonRepository personRepository = new ();
+PatientRepository patientRepository = new();
+SpecializationRepository specializationRepository = new();
+BranchRepository branchRepository = new();
+DoctorSpecializationRepository doctorSpecializationRepository = new();
+AppointmentRepository appointmentRepository = new();
+AppointmentStatusRepository appointmentStatusRepository = new();
+MedicalRecordRepository medicalRecordRepository = new();
+PaymentMethodRepository paymentMethodRepository = new();
+PaymentStatusRepository paymentStatusRepository = new();
+PaymentRepository paymentRepository = new();
 
 
-List<Doctor> doctors = new List<Doctor>();
+
+
 List<Patient> patients = new List<Patient>();
 List<Appointment> appointments = new List<Appointment>();
 
+DoctorSeederService doctorSeederService = new(connectionString, specializationRepository, doctorRepository, doctorSpecializationRepository,branchRepository ,doctorGenerator, doctorSpecializationGenerator);
+PatientDataSeeder patientDataSeeder = new(connectionString,patientGenerator,patientRepository);
+AppointmentDataSeeder appointmentDataSeeder = new(connectionString, appointmentRepository, appointmentStatusRepository, appointmentGenerator, doctorRepository, patientRepository, medicalRecordRepository,medicalRecordGenerator,paymentRepository ,paymentMethodRepository, paymentStatusRepository, paymentGenerator);
 
-await person.LoadExistingPesels();
-await doctorSpecialization.LoadExistingDoctorsSpecializations();
 
-
-
-var existingRelations = await doctorSpecialization.LoadExistingDoctorsSpecializations();
-var branchIds = await branch.branchIds();
 
 Console.WriteLine("Test Data Generator");
 Console.WriteLine("-------------------");
@@ -67,47 +66,20 @@ if (int.TryParse(input, out int choice))
         switch (choice)
         {
             case 1:
-                for (int i = 0; i < recordCount; i++)
-                {
-                    doctors.Add(doctorGenereator.GenerateDoctor(branchIds));
-                }
-                await doctor.InsertDoctors(doctors);
-                Console.WriteLine("New doctors inserted successfully!");
-                var specializations = await specialization.GetExistingSpecializationIds();
-                var doctorIds = await doctor.GetExistingDoctorIdsWithoutSpecialization();
-                var newRelations = doctorSpecializationGenerator.GenerateDoctorSpecializationRelation(doctorIds, specializations, existingRelations);
-                await doctorSpecialization.InsertDoctorSpecializations(newRelations);
-                Console.WriteLine("New relations were made!");
+                Console.WriteLine("Inserting doctors...");
+                await doctorSeederService.SeedDoctorsAsync(recordCount);
+                Console.WriteLine("Success!");
 
                 break;
             case 2:
-                for (int i = 0; i < recordCount; i++)
-                {
-                    patients.Add(patientGenereator.GeneratePatient());
-                }
-                await patient.InsertPatients(patients);
-                Console.WriteLine("Data inserted successfully!");
-
+                Console.WriteLine("Inserting patients...");
+                await patientDataSeeder.SeedPatientsAsync(recordCount);
+                Console.WriteLine("Success!");
                 break;
                 case 3:
-                var existingAppointments = await appointment.GetExistingAppointments();
-                var appointmentStatusIds = await appointmentStatus.GetExistingAppointmentStatusIds();
-                var doctorIdsForAppointments = await doctor.GetExistingDoctorsIds();
-                var patientIdsForAppointments = await patient.GetExistingPatientIds();
-                for (int i = 0; i < recordCount; i++)
-                {
-                    appointments.Add(appointmentGenerator.GenerateAppointment(doctorIdsForAppointments, patientIdsForAppointments, appointmentStatusIds, existingAppointments));
-                }
-                await appointment.InsertAppointments(appointments);
-                var appointmentsWithoutMedicalRecord = await appointment.GetAppointmentIdsWithoutMedicalRecordAndWhenTheyWereCreated();
-                var medicalRecords = medicalRecordGenerator.GenerateMedicalRecords(appointmentsWithoutMedicalRecord);
-                await medicalRecord.InsertMedicalRecords(medicalRecords);
-                var appointmentsWithoutPayment = await appointment.GetAppointmetsWithoutPayment();
-                var paymentMethods = await paymentMethod.GetExistingPaymentMethodIds();
-                var paymentStatusIds = await paymentStatus.GetExistingPaymentStatusIds();
-                var usedPaymentNumber = await payment.GetExistingPaymentNumbers();
-                var payments = paymentGenerator.GeneratePayments(appointmentsWithoutPayment,paymentMethods,paymentStatusIds,usedPaymentNumber);
-                await payment.InsertPayments(payments);
+                Console.WriteLine("Creating Appointments...");
+                await appointmentDataSeeder.SeedAppointmentAsync(recordCount);
+                Console.WriteLine("Success!");
                 break;
             default:
                 Console.WriteLine("Invalid choice. Please select 1 or 2.");
