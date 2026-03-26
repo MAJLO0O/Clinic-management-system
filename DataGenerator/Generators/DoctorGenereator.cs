@@ -14,7 +14,7 @@ namespace DataGenerator.Generators
         private readonly List<string> lastNames = new List<string>
         { "Smith", "Johnson", "Brown", "Taylor", "Anderson", "Thomas", "Jackson", "White", "Harris", "Martin" };
 
-        public Doctor GenerateDoctor(List<int> branchId)
+        public Doctor GenerateDoctor(List<int> branchId,int index)
         {
             string firstName = firstNames[Random.Shared.Next(firstNames.Count)];
             string lastName = lastNames[Random.Shared.Next(lastNames.Count)];
@@ -29,7 +29,7 @@ namespace DataGenerator.Generators
                 LastName = lastName,
                 Pesel = pesel,
                 PhoneNumber = GeneratorMethods.PhoneNumberGenerator(),
-                Email = GeneratorMethods.EmailGenerator(firstName,lastName),
+                Email = GeneratorMethods.EmailGenerator(firstName,lastName,index),
                 BranchId = branchId[Random.Shared.Next(branchId.Count)]
             };
         }

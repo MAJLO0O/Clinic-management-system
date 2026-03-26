@@ -26,6 +26,7 @@ namespace DataGenerator.Generators
                 paymentNumber = Random.Shared.Next(1000000, 100000000);
 
             }while (usedNumbers.Contains(paymentNumber));
+                usedNumbers.Add(paymentNumber);
              amount = Random.Shared.Next(100, 1000);
                 appointmentId = appointmentWithoutPaymentIds[Random.Shared.Next(appointmentWithoutPaymentIds.Count)];
                 appointmentWithoutPaymentIds.Remove(appointmentId);  

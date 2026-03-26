@@ -35,9 +35,9 @@ namespace DataGenerator.Generators
 
             return new string(digits);
         }
-        public static string EmailGenerator(string firstName, string lastName)
+        public static string EmailGenerator(string firstName, string lastName,int index)
         {
-            string email = $"{firstName.ToLower()}.{lastName.ToLower()}{Random.Shared.Next(100,999)}@example.com";
+            string email = $"{firstName.ToLower()}.{lastName.ToLower()}{index}@example.com";
             return email;
         }
         public static DateTime DateOfBirthGenerator()

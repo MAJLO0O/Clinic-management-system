@@ -2,6 +2,7 @@
 using DataGenerator.Models;
 using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Linq;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
@@ -11,65 +12,43 @@ namespace DataGenerator.Data
 {
     public class AppointmentRepository
     {
-            private readonly string _connectionString;
-            public AppointmentRepository(string connectionString)
+       
+        public async Task<HashSet<(int DoctorId,DateTime StartingDateTime)>> GetExistingAppointments(IDbConnection connection,IDbTransaction transaction)
             {
-                _connectionString = connectionString;
-            }
-            
-            public async Task<HashSet<(int DoctorId,DateTime StartngDateTime)>> GetExistingAppointments()
-            {
-                using (var connection = DbConnectionFactory.CreateDbConnection(_connectionString))
-                {
-                    await connection.OpenAsync();
                     var sql = "select doctor_id,starting_date_time from appointment";
-                    var appointmentsIds = await connection.QueryAsync<(int doctorId,DateTime StartingDateTime)>(sql);
+                    var appointmentsIds = await connection.QueryAsync<(int DoctorId,DateTime StartingDateTime)>(sql,transaction: transaction);
                     return appointmentsIds.ToHashSet();
-                }
-
-            
             }
-            public async Task<List<(int,DateTime)>> GetAppointmentIdsWithoutMedicalRecordAndWhenTheyWereCreated()
-            {
-            using (var connection = DbConnectionFactory.CreateDbConnection(_connectionString))
-            {
-                await connection.OpenAsync();
+        public async Task<List<(int, DateTime)>> GetAppointmentIdsWithoutMedicalRecordAndWhenTheyWereCreated(IDbConnection connection, IDbTransaction transaction)
+        {
                 var sql = @"
                 select a.id,a.starting_date_time
                 from appointment a
                 left join medical_record mr on a.id=mr.appointment_id
                 where mr.appointment_id is null
                 AND a.starting_date_time < NOW()";
-                var ids = await connection.QueryAsync<(int id,DateTime CreatedAt)>(sql);
+                var ids = await connection.QueryAsync<(int id, DateTime CreatedAt)>(sql, transaction: transaction);
                 return ids.ToList();
-            }
-            }
-
-            public async Task<List<int>> GetAppointmetsWithoutPayment()
+        }
+            public async Task<List<int>> GetAppointmentsWithoutPayment(IDbConnection connection, IDbTransaction transaction)
             {
-                using (var connection = DbConnectionFactory.CreateDbConnection(_connectionString))
-                {
-                    await connection.OpenAsync();
                     var sql = @"
                     select a.id
                     from appointment a
                     left join payment p on a.id=p.appointment_id
                     where p.appointment_id is null
                     AND a.starting_date_time < NOW()";
-                    var ids = await connection.QueryAsync<int>(sql);
+                    var ids = await connection.QueryAsync<int>(sql, transaction: transaction);
                     return ids.ToList();
                 }
-        }
-        public async Task InsertAppointments(List<Appointment> appointments)
+        
+        public async Task InsertAppointments(List<Appointment> appointments,IDbConnection connection,IDbTransaction transaction)
             {
                 var sql = new StringBuilder();
                 sql.Append("insert into appointment (starting_date_time, doctor_id, patient_id, appointment_status_id) values ");
                 var parameters = new DynamicParameters();
                 var values = new List<string>();
 
-            using (var connection = DbConnectionFactory.CreateDbConnection(_connectionString))
-            {
-                    await connection.OpenAsync();
             
                         for(int i=0;i<appointments.Count;i++)
                         {
@@ -81,19 +60,8 @@ namespace DataGenerator.Data
                         parameters.Add($"AppointmentStatusId{i}", appointments[i].AppointmentStatusId);
                         }
             sql.Append(string.Join(",", values));
-                using var transaction = connection.BeginTransaction();
-                try
-                {
                     await connection.ExecuteAsync(sql.ToString(), parameters,transaction);
-                    transaction.Commit();
-                }
-                catch(Exception ex)
-                {
-                    transaction.Rollback();
-                    Console.WriteLine("Error inserting appointments");
-                }
             }
                 
         }
     }
-}

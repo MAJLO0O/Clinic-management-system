@@ -25,7 +25,7 @@ namespace DataGenerator.Generators
             "Walker","Young","Allen","King","Wright","Scott","Torres","Nguyen","Hill","Flores"
         };
 
-        public Patient GeneratePatient()
+        public Patient GeneratePatient(int index)
         {
             string firstName = firstNames[Random.Shared.Next(firstNames.Count)];
             string lastName = lastNames[Random.Shared.Next(lastNames.Count)];
@@ -42,7 +42,7 @@ namespace DataGenerator.Generators
                 Pesel = pesel,
                 DateOfBirth = dateOfBirth,
                 PhoneNumber = GeneratorMethods.PhoneNumberGenerator(),
-                Email = GeneratorMethods.EmailGenerator(firstName, lastName),
+                Email = GeneratorMethods.EmailGenerator(firstName, lastName,index),
             };
         }
 
