@@ -62,16 +62,25 @@ namespace DataGenerator.Services
                 {
                     appointments.Add(_appointmentGenerator.GenerateAppointment(doctorIdsForAppointments, patientIdsForAppointments, appointmentStatusIds, existingAppointments));
                 }
-                await _appointmentRepository.InsertAppointments(appointments, connection, transaction);
+                foreach(var chunk in appointments.Chunk(1000))
+                {
+                     await _appointmentRepository.InsertAppointments(chunk.ToList(), connection, transaction);
+                }
                 var appointmentsWithoutMedicalRecord = await _appointmentRepository.GetAppointmentIdsWithoutMedicalRecordAndWhenTheyWereCreated(connection, transaction);
                 var medicalRecords = _medicalRecordGenerator.GenerateMedicalRecords(appointmentsWithoutMedicalRecord);
-                await _medicalRecordRepository.InsertMedicalRecords(medicalRecords, connection, transaction);
+                foreach (var chunk in medicalRecords.Chunk(1000))
+                {
+                    await _medicalRecordRepository.InsertMedicalRecords(chunk.ToList(), connection, transaction);
+                }
                 var appointmentsWithoutPayment = await _appointmentRepository.GetAppointmentsWithoutPayment(connection, transaction);
                 var paymentMethods = await _paymentMethodRepository.GetExistingPaymentMethodIds(connection, transaction);
                 var paymentStatusIds = await _paymentStatusRepository.GetExistingPaymentStatusIds(connection, transaction);
                 var usedPaymentNumber = await _paymentRepository.GetExistingPaymentNumbers(connection, transaction);
                 var payments = _paymentGenerator.GeneratePayments(appointmentsWithoutPayment, paymentMethods, paymentStatusIds, usedPaymentNumber);
-                await _paymentRepository.InsertPayments(payments, connection, transaction);
+                foreach (var chunk in payments.Chunk(1000))
+                {
+                    await _paymentRepository.InsertPayments(chunk.ToList(), connection, transaction);
+                }
                 await transaction.CommitAsync();
             }
             catch (Exception ex)

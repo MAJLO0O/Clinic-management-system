@@ -32,9 +32,12 @@ namespace DataGenerator.Services
             {
             for (int i = 0; i<recordCount; i++)
             {
-                patients.Add(_patientGenerator.GeneratePatient());
+                patients.Add(_patientGenerator.GeneratePatient(i));
             }
-            await _patientRepository.InsertPatients(patients,connection,transaction);
+                foreach (var chunk in patients.Chunk(1000))
+                {
+                    await _patientRepository.InsertPatients(chunk.ToList(), connection, transaction);
+                }
             Console.WriteLine("Data inserted successfully!");
             await transaction.CommitAsync();
             }

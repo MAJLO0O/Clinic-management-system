@@ -42,13 +42,19 @@ namespace DataGenerator.Services
                 var branchIds = await _branchRepository.branchIds(connection,transaction);
                 for (int i = 0; i < recordCount; i++)
                 {
-                    doctors.Add(_doctorGenerator.GenerateDoctor(branchIds));
+                    doctors.Add(_doctorGenerator.GenerateDoctor(branchIds,i));
                 }
-                await _doctorRepository.InsertDoctors(doctors, connection, transaction);
+                foreach(var chunk in doctors.Chunk(1000))
+                {
+                    await _doctorRepository.InsertDoctors(chunk.ToList(), connection, transaction);
+                }
                 var specializations = await _specializationRepository.GetExistingSpecializationIds(connection, transaction);
                 var doctorIds = await _doctorRepository.GetExistingDoctorIdsWithoutSpecialization(connection, transaction);
                 var newRelations = _doctorSpecializationGenerator.GenerateDoctorSpecializationRelation(doctorIds, specializations, existingRelations);
-                await _doctorSpecializationRepository.InsertDoctorSpecializations(newRelations, connection, transaction);
+                foreach(var chunk in newRelations.Chunk(1000))
+                {
+                    await _doctorSpecializationRepository.InsertDoctorSpecializations(chunk.ToList(), connection, transaction);
+                }
                 await transaction.CommitAsync();
             }
             catch (Exception ex)
