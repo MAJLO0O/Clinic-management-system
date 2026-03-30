@@ -1,6 +1,7 @@
 ﻿using DataGenerator.Data;
 using DataGenerator.Generators;
-using DataGenerator.Models;
+using MedicalData.Domain.Models;
+using MedicalData.Infrastructure.Repositories;
 using Npgsql;
 using System;
 using System.Collections.Generic;

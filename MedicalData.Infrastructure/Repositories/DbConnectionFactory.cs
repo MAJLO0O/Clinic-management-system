@@ -7,7 +7,7 @@ using System.Data.Common;
 using System.Data.SqlClient;
 using Npgsql;
 
-namespace DataGenerator.Data
+namespace MedicalData.Infrastructure.Repositories   
 {
     public class DbConnectionFactory
     {

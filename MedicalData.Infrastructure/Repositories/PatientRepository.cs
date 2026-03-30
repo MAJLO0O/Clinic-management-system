@@ -1,5 +1,5 @@
 ﻿using Dapper;
-using DataGenerator.Models;
+using MedicalData.Domain.Models;
 using System;
 using System.Collections.Generic;
 using System.Data;
@@ -8,7 +8,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace DataGenerator.Data
+namespace MedicalData.Infrastructure.Repositories
 {
     public class PatientRepository
     {

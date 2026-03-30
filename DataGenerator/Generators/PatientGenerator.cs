@@ -1,4 +1,4 @@
-﻿using DataGenerator.Models;
+﻿using MedicalData.Domain.Models;
 using System;
 using System.Collections.Generic;
 using System.Linq;

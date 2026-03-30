@@ -6,7 +6,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading.Tasks;
 using Dapper;
-using DataGenerator.Models;
+using MedicalData.Domain.Models;
 
 namespace DataGenerator.Data
 {
