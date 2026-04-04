@@ -1,9 +1,11 @@
 ﻿using Dapper;
+using MedicalData.Infrastructure.DTOs;
 using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace MedicalData.Infrastructure.Repositories
@@ -22,7 +24,7 @@ namespace MedicalData.Infrastructure.Repositories
             return result;
 
         }
-        
+
 
         public async Task InsertDoctorSpecializations(List<(int doctorId, int specializationId)> newRelations, IDbConnection connection, IDbTransaction transaction)
         {
@@ -40,7 +42,40 @@ namespace MedicalData.Infrastructure.Repositories
                 i++;
             }
             sql.Append(string.Join(",", values));
-            await connection.ExecuteAsync(sql.ToString(), parameters,transaction: transaction);
-        } 
+            await connection.ExecuteAsync(sql.ToString(), parameters, transaction: transaction);
+        }
+        public async Task ExportDoctorSpecializationAsync(IDbConnection connection)
+        {
+            var sql = "select doctor_id as DoctorId,specialization_id as SpecializationId from doctor_specialization";
+            using var reader = await connection.ExecuteReaderAsync(sql);
+            await using var stream = File.Create("exported_doctorspecialization.json");
+            using var writer = new Utf8JsonWriter(stream);
+
+            var doctorIdIndex = reader.GetOrdinal("DoctorId");
+            var specializationIdIndex = reader.GetOrdinal("SpecializationId");
+            try
+            {
+                writer.WriteStartArray();
+                while (reader.Read())
+                {
+                    var docorSPecialization = new ExportDoctorSpecializationDTO
+                    {
+                        DoctorId = reader.GetInt32(doctorIdIndex),
+                        SpecializationId = reader.GetInt32(specializationIdIndex)
+                    };
+                    JsonSerializer.Serialize(writer, docorSPecialization);
+                }
+                writer.WriteEndArray();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error during export: {ex.Message}");
+                throw;
+            }
+            finally
+            {
+                await writer.FlushAsync();
+            }
+        }
     }
 }

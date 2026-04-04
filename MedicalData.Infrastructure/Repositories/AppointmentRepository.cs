@@ -1,7 +1,11 @@
 ﻿using Dapper;
 using MedicalData.Domain.Models;
+using Npgsql.Internal;
 using System.Data;
 using System.Text;
+using System.Text.Json;
+using System.Data.Common;
+using MedicalData.Infrastructure.DTOs;
 
 namespace MedicalData.Infrastructure.Repositories;
 
@@ -57,6 +61,65 @@ public class AppointmentRepository
         sql.Append(string.Join(",", values));
                 await connection.ExecuteAsync(sql.ToString(), parameters,transaction);
         }
-            
+
+    public async Task InsertAppointmentsFromImport(int DoctorId, int PatientId, DateTime StartingDateTime, IDbConnection connection, IDbTransaction transaction)
+    {
+        var sql = @"insert into appointment (starting_date_time, doctor_id, patient_id) values (@StartingDateTime,@DoctorId,@PatientId)";
+        await connection.ExecuteAsync(sql,
+            new
+            {
+                StartingDateTime,
+                DoctorId,
+                PatientId,
+            }, transaction);
     }
+    public async Task ExportAllDataFromAppointmet(IDbConnection connection)
+    {
+        var sql = @"select id as Id, starting_date_time as StartingDateTime,
+        created_at as CreatedAt, doctor_id as DoctorId, patient_id as PatientId,
+        appointment_status_id as AppointmentStatusId from appointment";
+        using var reader = await connection.ExecuteReaderAsync(sql);
+        await using var stream = File.Create("exported_appointments.json");
+        using var writer = new Utf8JsonWriter(stream);
+
+        var idIndex = reader.GetOrdinal("Id");
+        var startIndex = reader.GetOrdinal("StartingDateTime");
+        var createdIndex = reader.GetOrdinal("CreatedAt");
+        var doctorIndex = reader.GetOrdinal("DoctorId");
+        var patientIndex = reader.GetOrdinal("PatientId");
+        var statusIndex = reader.GetOrdinal("AppointmentStatusId");
+
+        try
+        {
+            writer.WriteStartArray();
+            while (reader.Read())
+            {
+                var appointment = new AppointmentExportDTO
+                {
+
+                    Id = reader.GetInt32(idIndex),
+                    StartingDateTime = reader.GetDateTime(startIndex),
+                    CreatedAt = reader.GetDateTime(createdIndex),
+                    DoctorId = reader.GetInt32(doctorIndex),
+                    PatientId = reader.GetInt32(patientIndex),
+                    AppointmentStatusId = reader.GetInt32(statusIndex)
+                };
+
+                JsonSerializer.Serialize(writer, appointment);
+            }
+            writer.WriteEndArray();
+
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"An error occurred while exporting appointments: {ex.Message}");
+            throw;
+        }
+        finally
+        {
+            await writer.FlushAsync();
+        }
+
+    }
+}
 

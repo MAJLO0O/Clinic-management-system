@@ -4,9 +4,11 @@ using System.Data;
 using System.Linq;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Dapper;
 using MedicalData.Domain.Models;
+using MedicalData.Infrastructure.DTOs;
 
 namespace DataGenerator.Data
 {
@@ -44,5 +46,49 @@ namespace DataGenerator.Data
                 var paymentNumbers = await connection.QueryAsync<int>(sql,transaction: transaction);
                 return paymentNumbers.ToHashSet();
             }
+        public async Task ExportPaymentsAsync(IDbConnection connection)
+        {
+            var sql = "select id as Id, payment_number as PaymentNumber, amount as Amount, payment_method_id as PaymentMethodId, appointment_id as AppointmentId, payment_status_id as PaymentStatusId from payment";
+            
+            using var reader = await connection.ExecuteReaderAsync(sql);
+            await using var stream = File.Create("exported_payments.json");
+            using var writer = new Utf8JsonWriter(stream);
+
+            var idIndex = reader.GetOrdinal("Id");
+            var paymentNumberIndex = reader.GetOrdinal("PaymentNumber");
+            var amountIndex = reader.GetOrdinal("Amount");
+            var paymentMethodIdIndex = reader.GetOrdinal("PaymentMethodId");
+            var appointmentIdIndex = reader.GetOrdinal("AppointmentId");
+            var paymentStatusIdIndex = reader.GetOrdinal("PaymentStatusId");
+
+            try
+            {
+                writer.WriteStartArray();
+                while(reader.Read())
+                {
+                    var payment = new ExportPaymentDTO
+                    {
+                        Id = reader.GetInt32(idIndex),
+                        PaymentNumber = reader.GetInt32(paymentNumberIndex),
+                        Amount = reader.GetDecimal(amountIndex),
+                        PaymentMethodId = reader.IsDBNull(paymentMethodIdIndex) ? null : reader.GetInt32(paymentMethodIdIndex),
+                        AppointmentId = reader.GetInt32(appointmentIdIndex),
+                        PaymentStatusId = reader.GetInt32(paymentStatusIdIndex)
+
+                    };
+                    JsonSerializer.Serialize(writer, payment);
+                }
+                writer.WriteEndArray();
+            }
+            catch(Exception ex)
+            {
+                Console.WriteLine($"Failed exporting payments table {ex.Message} ");
+                throw;
+            }
+            finally
+            {
+                await writer.FlushAsync();
+            }
+        }
     }
     } 

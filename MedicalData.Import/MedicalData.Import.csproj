@@ -8,12 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Dapper" Version="2.1.72" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.3" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\MedicalData.Domain\MedicalData.Domain.csproj" />
+    <ProjectReference Include="..\MedicalData.Export\MedicalData.Export.csproj" />
     <ProjectReference Include="..\MedicalData.Infrastructure\MedicalData.Infrastructure.csproj" />
   </ItemGroup>
 
