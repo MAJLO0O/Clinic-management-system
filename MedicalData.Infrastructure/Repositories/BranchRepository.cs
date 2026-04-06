@@ -9,6 +9,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using System.Transactions;
 using MedicalData.Infrastructure.DTOs;
+using MedicalData.Infrastructure.Helpers;
 
 namespace MedicalData.Infrastructure.Repositories
 {
@@ -24,7 +25,8 @@ namespace MedicalData.Infrastructure.Repositories
         {
             var sql = "select id as Id, city as City, address as Address from branch";
             using var reader = await connection.ExecuteReaderAsync(sql);
-            await using var stream = File.Create("exported_branches.json");
+            var path = Path.Combine(PathHelper.GetDataPath(),"exported_branches.json");
+            await using var stream = File.Create(path);
             using var writer = new Utf8JsonWriter(stream);
             
             var idIndex = reader.GetOrdinal("Id");
@@ -36,7 +38,7 @@ namespace MedicalData.Infrastructure.Repositories
                 writer.WriteStartArray();
                 while(reader.Read())
                 {
-                    var branch = new ExportBranchDTO
+                    var branch = new BranchSnapshotDTO
                     {
                         Id = reader.GetInt32(idIndex),
                         City = reader.GetString(cityIndex),
@@ -55,8 +57,39 @@ namespace MedicalData.Infrastructure.Repositories
             {
                 await writer.FlushAsync();
             }
-
         }
+        public async Task ImportBranchesAsync(IDbConnection connection)
+        {
+            var path = Path.Combine(PathHelper.GetDataPath(), "exported_branches.json");
+            var stream = await File.ReadAllTextAsync(path);
+
+            var branches = JsonSerializer.Deserialize<List<BranchSnapshotDTO>>(stream);
+            if (branches == null)
+            {
+                throw new Exception("Failed to deserialize branches from JSON. File was empty");
+            }
+            try
+            {
+                foreach (var branch in branches)
+                {
+                    var sql = "insert into branch (id, city, address) values (@Id, @City, @Address);";
+                    await connection.ExecuteAsync(sql, branch);
+                }
+                var resetSequenceSql = @"SELECT setval(
+                    pg_get_serial_sequence('branch','id'),
+                    COALESCE((SELECT MAX(id) FROM branch),1),
+                    true
+                    );";
+                await connection.ExecuteAsync(resetSequenceSql);
+                Console.WriteLine("Imported branch");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Import of table branch failed {ex.Message}");
+                throw;
+            }
+        }
+
     }
 
 }

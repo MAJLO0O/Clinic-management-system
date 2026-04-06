@@ -13,6 +13,7 @@ using System.Text.Json;
 using MedicalData.Infrastructure.DTOs;
 using System.Threading.Tasks;
 using System.Transactions;
+using MedicalData.Infrastructure.Helpers;
 
 
 namespace MedicalData.Infrastructure.Repositories
@@ -85,7 +86,7 @@ namespace MedicalData.Infrastructure.Repositories
                 writer.WriteStartArray();
                 while (reader.Read())
                 {
-                    var doctor = new ExportDoctorsDTO
+                    var doctor = new DoctorSnapshotDTO
                     {
                         Id = reader.GetInt32(idIndex),
                         FirstName = reader.GetString(firstNameIndex),
@@ -109,6 +110,65 @@ namespace MedicalData.Infrastructure.Repositories
             finally
             {
                 await writer.FlushAsync();
+            }
+        }
+        public async Task ImportDoctorsAsync(IDbConnection connection)
+        {
+            var path = Path.Combine(PathHelper.GetDataPath(), "exported_doctors.json");
+            await using var json = File.OpenRead(path);
+            var batch = new List<string>();
+            var sql = new StringBuilder();
+            sql.Append(@"insert into doctor (id,first_name,last_name,pesel,phone_number,email,deleted_at,created_at,branch_id) values ");
+            var parameters = new DynamicParameters();
+            using var transaction = connection.BeginTransaction();
+            try
+            {
+                await foreach (var doctor in JsonSerializer.DeserializeAsyncEnumerable<DoctorSnapshotDTO>(json))
+                {
+                    if (doctor != null)
+                    {
+                        int i = batch.Count;
+                        batch.Add($"(@Id{i}, @FirstName{i}, @LastName{i}, @Pesel{i},@PhoneNumber{i}, @Email{i}, @DeletedAt{i}, @CreatedAt{i}, @BranchId{i} )");
+                        parameters.Add($"Id{i}", doctor.Id);
+                        parameters.Add($"FirstName{i}", doctor.FirstName);
+                        parameters.Add($"LastName{i}", doctor.LastName);
+                        parameters.Add($"Pesel{i}", doctor.Pesel);
+                        parameters.Add($"PhoneNumber{i}", doctor.PhoneNumber);
+                        parameters.Add($"Email{i}", doctor.Email);
+                        parameters.Add($"DeletedAt{i}", doctor.DeletedAt);
+                        parameters.Add($"CreatedAt{i}", doctor.CreatedAt);
+                        parameters.Add($"BranchId{i}", doctor.BranchId);
+
+                        if (batch.Count == 5000)
+                        {
+                            sql.Append(string.Join(",", batch));
+                            await connection.ExecuteAsync(sql.ToString(), parameters, transaction);
+                            batch.Clear();
+                            sql = new StringBuilder();
+                            sql.Append("insert into doctor (id,first_name,last_name,pesel,phone_number,email,deleted_at,created_at,branch_id) values ");
+                            parameters = new DynamicParameters();
+                        }
+                    }
+                }
+                    if (batch.Count > 0)
+                    {
+                    sql.Append(string.Join(",", batch));
+                        await connection.ExecuteAsync(sql.ToString(), parameters, transaction);
+                    }
+                    var resetSequenceSql = @"SELECT setval(
+                    pg_get_serial_sequence('doctor','id'),
+                    COALESCE((SELECT MAX(id) FROM doctor),1),
+                    true
+                    );";
+                    await connection.ExecuteAsync(resetSequenceSql);
+                    transaction.Commit();
+                    Console.WriteLine("Imported Doctors");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error importing doctors: {ex.Message}");
+                transaction.Rollback();
+                throw;
             }
         }
     }

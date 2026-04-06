@@ -8,6 +8,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using MedicalData.Infrastructure.DTOs;
 using Npgsql.Replication.PgOutput.Messages;
+using MedicalData.Infrastructure.Helpers;
 
 namespace MedicalData.Infrastructure.Repositories
 {
@@ -25,7 +26,8 @@ namespace MedicalData.Infrastructure.Repositories
             var sql = "select id as Id, status as Status from appointment_status";
 
             using var reader = await connection.ExecuteReaderAsync(sql);
-            await using var stream = File.Create("exported_appointment_status.json");
+            var path = Path.Combine(PathHelper.GetDataPath(), "exported_appointment_status.json");
+            await using var stream = File.Create(path);
             using var writer = new Utf8JsonWriter(stream);
 
             var idIndex = reader.GetOrdinal("Id");
@@ -35,7 +37,7 @@ namespace MedicalData.Infrastructure.Repositories
                 writer.WriteStartArray();
                 while (reader.Read())
                 {
-                    var appointmentStatus = new ExportAppointmentStatusDTO
+                    var appointmentStatus = new AppointmentStatusSnapshotDTO
                     {
                         Id = reader.GetInt32(idIndex),
                         Status = reader.GetString(statusIndex)
@@ -54,6 +56,40 @@ namespace MedicalData.Infrastructure.Repositories
                 await writer.FlushAsync();
             }
            
+        }
+        public async Task InsertAppointmentStatusAsync(IDbConnection connection)
+        {
+            
+            var path = Path.Combine(PathHelper.GetDataPath(), "exported_appointment_status.json");
+            var json = await File.ReadAllTextAsync(path);
+            var data = JsonSerializer.Deserialize<List<AppointmentStatusSnapshotDTO>>(json);
+            var parameters = new DynamicParameters();
+            if (data == null)
+                throw new Exception("The file is empty");
+            try
+            {
+                foreach (var item in data)
+                {
+                    var sql = "insert into appointment_status (id,status) values (@Id, @Status);";
+
+                    await connection.ExecuteAsync(sql,item);
+
+                   
+                }
+                var resetSequenceSql = @"SELECT setval(
+                    pg_get_serial_sequence('appointment_status','id'),
+                    COALESCE((SELECT MAX(id) FROM appointment_status),1),
+                    true
+                    );";
+                await connection.ExecuteAsync(resetSequenceSql);
+                Console.WriteLine("Imported appointment_status");
+            }
+            catch(Exception ex)
+            {
+                Console.WriteLine($"Failed inserting to table appointment_status {ex.Message}");
+                throw;
+            }
+            
         }
     }
     }

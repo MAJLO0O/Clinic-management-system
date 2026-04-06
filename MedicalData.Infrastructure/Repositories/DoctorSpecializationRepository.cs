@@ -1,5 +1,7 @@
 ﻿using Dapper;
+using MedicalData.Domain.Models;
 using MedicalData.Infrastructure.DTOs;
+using MedicalData.Infrastructure.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Data;
@@ -48,7 +50,8 @@ namespace MedicalData.Infrastructure.Repositories
         {
             var sql = "select doctor_id as DoctorId,specialization_id as SpecializationId from doctor_specialization";
             using var reader = await connection.ExecuteReaderAsync(sql);
-            await using var stream = File.Create("exported_doctorspecialization.json");
+            var path = Path.Combine(PathHelper.GetDataPath(), "exported_doctorspecialization.json");
+            await using var stream = File.Create(path);
             using var writer = new Utf8JsonWriter(stream);
 
             var doctorIdIndex = reader.GetOrdinal("DoctorId");
@@ -58,7 +61,7 @@ namespace MedicalData.Infrastructure.Repositories
                 writer.WriteStartArray();
                 while (reader.Read())
                 {
-                    var docorSPecialization = new ExportDoctorSpecializationDTO
+                    var docorSPecialization = new DoctorSpecializationSnapshotDTO
                     {
                         DoctorId = reader.GetInt32(doctorIdIndex),
                         SpecializationId = reader.GetInt32(specializationIdIndex)
@@ -77,5 +80,48 @@ namespace MedicalData.Infrastructure.Repositories
                 await writer.FlushAsync();
             }
         }
-    }
+        public async Task ImportDoctorSpecializationAsync(IDbConnection connection)
+        {
+            var path = Path.Combine(PathHelper.GetDataPath(), "exported_doctorspecialization.json");
+            await using var json =  File.OpenRead(path);
+            var sql = new StringBuilder();
+            sql.Append("INSERT INTO doctor_specialization (doctor_id, specialization_id) VALUES ");
+            var batch = new List<string>();
+            var parameters = new DynamicParameters();
+            using var transaction = connection.BeginTransaction();
+            try
+            {
+                await foreach (var item in JsonSerializer.DeserializeAsyncEnumerable<DoctorSpecializationSnapshotDTO>(json))
+                {
+                    if (item != null)
+                    {
+                        int i = batch.Count;
+                        batch.Add($"(@DoctorId{i}, @SpecializationId{i})");
+                        parameters.Add($"DoctorId{i}", item.DoctorId);
+                        parameters.Add($"SpecializationId{i}", item.SpecializationId);
+                        if (batch.Count == 5000)
+                        {
+                            sql.Append(string.Join(",", batch));
+                            await connection.ExecuteAsync(sql.ToString(),parameters, transaction);
+                            batch.Clear();
+                            sql = new StringBuilder();
+                            sql.Append("INSERT INTO doctor_specialization (doctor_id, specialization_id) VALUES ");
+                            parameters = new DynamicParameters();
+                        }
+                    }
+                }
+                if(batch.Count > 0)
+                {
+                    sql.Append(string.Join(",", batch));
+                    await connection.ExecuteAsync(sql.ToString(), parameters, transaction);
+                }
+                Console.WriteLine("Imported doctor_specialization");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error during import: {ex.Message}");
+                throw;
+            }
+        }
+    } 
 }

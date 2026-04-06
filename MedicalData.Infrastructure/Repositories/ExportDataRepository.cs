@@ -18,7 +18,7 @@ namespace MedicalData.Infrastructure.Repositories
             _connectionString = connectionString;
         }
 
-        public async Task<List<AppointmentExportDTO>> GetExportDataAsync()
+        public async Task<List<AppointmentSnapshotDTO>> GetExportDataAsync()
         {
             using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
@@ -36,7 +36,7 @@ namespace MedicalData.Infrastructure.Repositories
             join branch b on d.branch_id = b.id
             join patient p on a.patient_id  = p.id";
 
-            var result = await connection.QueryAsync<AppointmentExportDTO>(sql);
+            var result = await connection.QueryAsync<AppointmentSnapshotDTO>(sql);
             return result.ToList();
         }
     }

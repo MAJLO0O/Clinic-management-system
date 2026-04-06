@@ -1,11 +1,14 @@
 ﻿using Dapper;
 using MedicalData.Domain.Models;
+using MedicalData.Infrastructure.DTOs;
+using MedicalData.Infrastructure.Helpers;
 using Npgsql.Internal;
 using System.Data;
+using System.Data.Common;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
-using System.Data.Common;
-using MedicalData.Infrastructure.DTOs;
+using System.Transactions;
 
 namespace MedicalData.Infrastructure.Repositories;
 
@@ -79,7 +82,8 @@ public class AppointmentRepository
         created_at as CreatedAt, doctor_id as DoctorId, patient_id as PatientId,
         appointment_status_id as AppointmentStatusId from appointment";
         using var reader = await connection.ExecuteReaderAsync(sql);
-        await using var stream = File.Create("exported_appointments.json");
+        var path = Path.Combine(PathHelper.GetDataPath(), "exported_appointments.json");
+        await using var stream = File.Create(path);
         using var writer = new Utf8JsonWriter(stream);
 
         var idIndex = reader.GetOrdinal("Id");
@@ -94,7 +98,7 @@ public class AppointmentRepository
             writer.WriteStartArray();
             while (reader.Read())
             {
-                var appointment = new AppointmentExportDTO
+                var appointment = new AppointmentSnapshotDTO
                 {
 
                     Id = reader.GetInt32(idIndex),
@@ -119,7 +123,61 @@ public class AppointmentRepository
         {
             await writer.FlushAsync();
         }
-
+    }
+    public async Task ImportAppointmentAsync(IDbConnection connection)
+    {
+        var path = Path.Combine(PathHelper.GetDataPath(), "exported_appointments.json");
+        var stream = File.OpenRead(path);
+        var sql = new StringBuilder();
+        sql.Append(@"insert into appointment (id, starting_date_time, created_at, doctor_id, patient_id, appointment_status_id) values ");
+        var batch = new List<string>();
+        var parameters = new DynamicParameters();
+        using var transaction = connection.BeginTransaction();
+        try
+        {
+            await foreach (var appointment in JsonSerializer.DeserializeAsyncEnumerable<AppointmentSnapshotDTO>(stream))
+            {
+                if (appointment != null)
+                {
+                    int i = batch.Count;
+                    batch.Add($"(@Id{i}, @StartingDateTime{i}, @CreatedAt{i}, @DoctorId{i}, @PatientId{i}, @AppointmentStatusId{i})");
+                    parameters.Add($"Id{i}", appointment.Id);
+                    parameters.Add($"StartingDateTime{i}", appointment.StartingDateTime);
+                    parameters.Add($"CreatedAt{i}", appointment.CreatedAt);
+                    parameters.Add($"DoctorId{i}", appointment.DoctorId);
+                    parameters.Add($"PatientId{i}", appointment.PatientId);
+                    parameters.Add($"AppointmentStatusId{i}", appointment.AppointmentStatusId);
+                    if (batch.Count == 5000)
+                    {
+                        sql.Append(string.Join(",", batch));
+                        await connection.ExecuteAsync(sql.ToString(), parameters, transaction);
+                        batch.Clear();
+                        sql = new StringBuilder();
+                        sql.Append(@"insert into appointment (id, starting_date_time, created_at, doctor_id, patient_id, appointment_status_id) values ");
+                        parameters = new DynamicParameters();
+                    }
+                }
+            }
+            if (batch.Count > 0)
+            {
+                sql.Append(string.Join(",", batch));
+                await connection.ExecuteAsync(sql.ToString(), parameters, transaction);
+            }
+            var resetSequenceSql = @"SELECT setval(
+                    pg_get_serial_sequence('appointment','id'),
+                    COALESCE((SELECT MAX(id) FROM appointment),1),
+                    true
+                    );";
+            await connection.ExecuteAsync(resetSequenceSql);
+            transaction.Commit();
+            Console.WriteLine("Imported patient");
+        }
+        catch (Exception ex)
+        {
+            transaction.Rollback();
+            Console.WriteLine($"An error occurred while importing appointments: {ex.Message}");
+            throw;
+        }
     }
 }
 

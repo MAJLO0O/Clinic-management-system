@@ -1,6 +1,7 @@
 ﻿using Dapper;
 using MedicalData.Domain.Models;
 using MedicalData.Infrastructure.DTOs;
+using MedicalData.Infrastructure.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Data;
@@ -54,7 +55,8 @@ namespace MedicalData.Infrastructure.Repositories
             date_of_birth as DateOfBirth, phone as Phone, email as Email, deleted_at as DeletedAt from patient";
 
             using var reader = await connection.ExecuteReaderAsync(sql);
-            await using var stream = File.Create("exported_patients.json");
+            var path = Path.Combine(PathHelper.GetDataPath(), "exported_patients.json");
+            await using var stream = File.Create(path);
             using var writer = new Utf8JsonWriter(stream);
 
             var idIndex = reader.GetOrdinal("Id");
@@ -71,13 +73,13 @@ namespace MedicalData.Infrastructure.Repositories
                 writer.WriteStartArray();
                 while (reader.Read())
                 {
-                    var patient = new ExportPatientDTO
+                    var patient = new PatientSnapshotDTO
                     {
                         Id = reader.GetInt32(idIndex),
                         FirstName = reader.GetString(firstNameIndex),
                         LastName = reader.GetString(lastNameIndex),
                         Pesel = reader.GetString(peselIndex),
-                        DateOfBirth = DateOnly.FromDateTime(reader.GetDateTime(dateOfBirthIndex)),
+                        DateOfBirth = reader.GetDateTime(dateOfBirthIndex),
                         Phone = reader.GetString(phoneIndex),
                         Email = reader.GetString(emailIndex),
                         DeletedAt = reader.IsDBNull(deletedAtIndex) ? null : reader.GetDateTime(deletedAtIndex)
@@ -94,6 +96,64 @@ namespace MedicalData.Infrastructure.Repositories
             finally
             {
                 await writer.FlushAsync();
+            }
+        }
+        public async Task ImportPatientsAsync(IDbConnection connection)
+        {
+            var path = Path.Combine(PathHelper.GetDataPath(), "exported_patients.json");
+            await using var stream = File.OpenRead(path);
+            var sql = new StringBuilder();
+            sql.Append(@"INSERT INTO patient (id, first_name, last_name, pesel, date_of_birth, phone, email, deleted_at) VALUES ");
+            using var transaction = connection.BeginTransaction();
+            var batch = new List<string>();
+            var parameters = new DynamicParameters();
+            try
+            {
+                await foreach (var patient in JsonSerializer.DeserializeAsyncEnumerable<PatientSnapshotDTO>(stream))
+                {
+                    if (patient != null)
+                    {
+                        int i = batch.Count;
+                        batch.Add($"(@Id{i},@FirstName{i},@LastName{i},@Pesel{i},@DateOfBirth{i},@Phone{i},@Email{i},@DeletedAt{i})");
+                        parameters.Add($"Id{i}", patient.Id);
+                        parameters.Add($"FirstName{i}", patient.FirstName);
+                        parameters.Add($"LastName{i}", patient.LastName);
+                        parameters.Add($"Pesel{i}", patient.Pesel);
+                        parameters.Add($"DateOfBirth{i}", patient.DateOfBirth);
+                        parameters.Add($"Phone{i}", patient.Phone);
+                        parameters.Add($"Email{i}", patient.Email);
+                        parameters.Add($"DeletedAt{i}", patient.DeletedAt);
+                        if (batch.Count == 5000)
+                        {
+                            sql.Append(string.Join(",", batch));
+                            await connection.ExecuteAsync(sql.ToString(), parameters,transaction);
+                            batch.Clear();
+                            sql = new StringBuilder();
+                            sql.Append(@"INSERT INTO patient (id, first_name, last_name, pesel, date_of_birth, phone, email, deleted_at) VALUES ");
+                            batch = new List<string>();
+                            parameters = new DynamicParameters();
+                        }
+                    }
+                }
+                if(batch.Count > 0)
+                {
+                    sql.Append(string.Join(",", batch));
+                    await connection.ExecuteAsync(sql.ToString(), parameters,transaction);
+                }
+                var resetSequenceSql = @"SELECT setval(
+                    pg_get_serial_sequence('patient','id'),
+                    COALESCE((SELECT MAX(id) FROM patient),1),
+                    true
+                    );";
+                await connection.ExecuteAsync(resetSequenceSql);
+                transaction.Commit();
+                Console.WriteLine("Imported patient");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error importing patients: {ex.Message}");
+                transaction.Rollback();
+                throw;
             }
         }
     }
