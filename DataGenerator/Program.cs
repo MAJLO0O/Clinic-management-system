@@ -1,11 +1,12 @@
 ﻿
 using DataGenerator.Data;
 using DataGenerator.Generators;
-using DataGenerator.Models;
+using MedicalData.Domain.Models;
 using DataGenerator.Services;
 using Microsoft.Extensions.Configuration;
+using MedicalData.Infrastructure.Repositories;
 
- int recordCount()
+int recordCount()
 {
     Console.WriteLine("How many records do you want to generate?");
     var input = Console.ReadLine();

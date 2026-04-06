@@ -1,6 +1,7 @@
 ﻿using DataGenerator.Data;
 using DataGenerator.Generators;
-using DataGenerator.Models;
+using MedicalData.Domain.Models;
+using MedicalData.Infrastructure.Repositories;
 using Npgsql;
 using System;
 using System.Collections.Generic;
@@ -13,7 +14,6 @@ namespace DataGenerator.Services
 {
     public class AppointmentDataSeeder
     {
-        //todo zrob implementacje seeder'a
         public readonly string _connectionString;
         private readonly AppointmentRepository _appointmentRepository;
         private readonly AppointmentStatusRepository _appointmentStatusRepository;
@@ -58,6 +58,8 @@ namespace DataGenerator.Services
                 var appointmentStatusIds = await _appointmentStatusRepository.GetExistingAppointmentStatusIds(connection, transaction);
                 var doctorIdsForAppointments = await _doctorRepository.GetExistingDoctorsIds(connection, transaction);
                 var patientIdsForAppointments = await _patientRepository.GetExistingPatientIds(connection, transaction);
+
+
                 for (int i = 0; i < recordCount; i++)
                 {
                     appointments.Add(_appointmentGenerator.GenerateAppointment(doctorIdsForAppointments, patientIdsForAppointments, appointmentStatusIds, existingAppointments));
@@ -66,6 +68,8 @@ namespace DataGenerator.Services
                 {
                      await _appointmentRepository.InsertAppointments(chunk.ToList(), connection, transaction);
                 }
+
+
                 var appointmentsWithoutMedicalRecord = await _appointmentRepository.GetAppointmentIdsWithoutMedicalRecordAndWhenTheyWereCreated(connection, transaction);
                 var medicalRecords = _medicalRecordGenerator.GenerateMedicalRecords(appointmentsWithoutMedicalRecord);
                 foreach (var chunk in medicalRecords.Chunk(1000))
@@ -77,12 +81,14 @@ namespace DataGenerator.Services
                 var paymentStatusIds = await _paymentStatusRepository.GetExistingPaymentStatusIds(connection, transaction);
                 var usedPaymentNumber = await _paymentRepository.GetExistingPaymentNumbers(connection, transaction);
                 var payments = _paymentGenerator.GeneratePayments(appointmentsWithoutPayment, paymentMethods, paymentStatusIds, usedPaymentNumber);
+                
                 foreach (var chunk in payments.Chunk(1000))
                 {
                     await _paymentRepository.InsertPayments(chunk.ToList(), connection, transaction);
                 }
                 await transaction.CommitAsync();
             }
+
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();

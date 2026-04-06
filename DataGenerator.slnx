@@ -1,3 +1,7 @@
 <Solution>
   <Project Path="DataGenerator/DataGenerator.csproj" />
+  <Project Path="MedicalData.Domain/MedicalData.Domain.csproj" Id="85baeca8-8bf2-4a64-88b4-d4125a913fee" />
+  <Project Path="MedicalData.Export/MedicalData.Export.csproj" Id="88119bda-9ea0-4513-8c07-51d12d3b86dd" />
+  <Project Path="MedicalData.Import/MedicalData.Import.csproj" Id="562787d4-177b-40a9-a83a-ef28a0e566a3" />
+  <Project Path="MedicalData.Infrastructure/MedicalData.Infrastructure.csproj" Id="3fc50b3e-0c13-4038-9644-987d7f3e835e" />
 </Solution>
