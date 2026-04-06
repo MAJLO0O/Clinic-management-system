@@ -69,7 +69,8 @@ namespace MedicalData.Infrastructure.Repositories
                         deleted_at as DeletedAt, created_at as CreatedAt,branch_id as BranchId from doctor";
 
             using var reader = await connection.ExecuteReaderAsync(sql);
-            await using var stream = File.Create("exported_doctors.json");
+            var path = Path.Combine(PathHelper.GetDataPath(), "exported_doctors.json");
+            await using var stream = File.Create(path);
             using var writer = new Utf8JsonWriter(stream);
 
             var idIndex = reader.GetOrdinal("Id");

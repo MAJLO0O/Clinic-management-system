@@ -115,6 +115,7 @@ namespace MedicalData.Infrastructure.Repositories
                     sql.Append(string.Join(",", batch));
                     await connection.ExecuteAsync(sql.ToString(), parameters, transaction);
                 }
+                transaction.Commit();
                 Console.WriteLine("Imported doctor_specialization");
             }
             catch (Exception ex)

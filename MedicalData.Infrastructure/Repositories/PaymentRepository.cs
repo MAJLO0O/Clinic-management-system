@@ -53,7 +53,7 @@ namespace DataGenerator.Data
 
             using var reader = await connection.ExecuteReaderAsync(sql);
             var path = Path.Combine(PathHelper.GetDataPath(), "exported_payments.json");
-            await using var stream = File.Create("path");
+            await using var stream = File.Create(path);
             using var writer = new Utf8JsonWriter(stream);
 
             var idIndex = reader.GetOrdinal("Id");

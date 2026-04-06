@@ -39,7 +39,8 @@ namespace MedicalData.Infrastructure.Repositories
             var sql = "select appointment_id as AppointmentId, note as Note, created_at as CreatedAt from medical_record";
 
             using var reader = await connection.ExecuteReaderAsync(sql);
-            await using var stream = File.Create("exported_medicalrecords.json");
+            var path = Path.Combine(PathHelper.GetDataPath(), "exported_medicalrecords.json");
+            await using var stream = File.Create(path);
             using var writer = new Utf8JsonWriter(stream);
 
             var appointmentIdIndex = reader.GetOrdinal("AppointmentId");
