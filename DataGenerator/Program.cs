@@ -1,10 +1,10 @@
-﻿
-using DataGenerator.Data;
+﻿using DataGenerator.Data;
 using DataGenerator.Generators;
 using MedicalData.Domain.Models;
 using DataGenerator.Services;
 using Microsoft.Extensions.Configuration;
 using MedicalData.Infrastructure.Repositories;
+using System.Diagnostics;
 
 int recordCount()
 {
@@ -104,14 +104,19 @@ if (int.TryParse(input, out int choice))
         break;
                 
         case 4:
-                Console.WriteLine("Cleaning all data...");
+                Stopwatch stopwatch = Stopwatch.StartNew();
+            Console.WriteLine("Cleaning all data...");
                 await dataCleanerService.ClearAllAsync();
                 Console.WriteLine("Seeding data for benchmark... (number required is for number of doctors we will multiply it by 2 for patients and by 6 for appointments");
                 count = recordCount();
+                Console.WriteLine("Seeding doctors");
                 await doctorSeederService.SeedDoctorsAsync(count);
                 await patientDataSeeder.SeedPatientsAsync(2*count);
                 await appointmentDataSeeder.SeedAppointmentAsync(6*count);
+                stopwatch.Stop();
+                Console.WriteLine($"Data seeded in {stopwatch.Elapsed.TotalSeconds} seconds.");
                 Console.WriteLine($"Successfully added {count+2*count+6*count} records!");
+                
             break;
                 
         case 5:

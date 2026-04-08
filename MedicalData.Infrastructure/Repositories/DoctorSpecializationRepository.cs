@@ -28,7 +28,7 @@ namespace MedicalData.Infrastructure.Repositories
         }
 
 
-        public async Task InsertDoctorSpecializations(List<(int doctorId, int specializationId)> newRelations, IDbConnection connection, IDbTransaction transaction)
+        public async Task InsertDoctorSpecializations(List<DoctorSpecializationSnapshotDTO> newRelations, IDbConnection connection, IDbTransaction transaction)
         {
             var sql = new StringBuilder();
             sql.Append("INSERT INTO doctor_specialization (doctor_id, specialization_id) VALUES ");
@@ -39,8 +39,8 @@ namespace MedicalData.Infrastructure.Repositories
             {
                 values.Add($"(@DoctorId{i}, @SpecializationId{i})");
 
-                parameters.Add($"DoctorId{i}", relation.doctorId);
-                parameters.Add($"SpecializationId{i}", relation.specializationId);
+                parameters.Add($"DoctorId{i}", relation.DoctorId);
+                parameters.Add($"SpecializationId{i}", relation.SpecializationId);
                 i++;
             }
             sql.Append(string.Join(",", values));

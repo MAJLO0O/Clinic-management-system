@@ -1,4 +1,5 @@
 ﻿using DataGenerator.Data;
+using MedicalData.Infrastructure.DTOs;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -11,9 +12,9 @@ namespace DataGenerator.Generators
     {
         public HashSet<(int, int)> existingRelations = new();
        
-        public List<(int doctorId, int specializationId)> GenerateDoctorSpecializationRelation(List<int> doctorIds,List<int> specializationsId, HashSet<(int,int)> existingRelations) 
+        public List<DoctorSpecializationSnapshotDTO> GenerateDoctorSpecializationRelation(List<int> doctorIds,List<int> specializationsId, HashSet<(int,int)> existingRelations) 
         {
-            var result = new List<(int doctorId, int specializationId)>();
+            var result = new List<DoctorSpecializationSnapshotDTO>();
             var random = new Random();
             foreach (var doctorId in doctorIds)
             {
@@ -27,7 +28,11 @@ namespace DataGenerator.Generators
                         specializationId = specializationsId[random.Next(specializationsId.Count)];
                     } while (assignedSpecializations.Contains(specializationId) || existingRelations.Contains((doctorId, specializationId)));
                     assignedSpecializations.Add(specializationId);
-                    result.Add((doctorId, specializationId));
+                    result.Add(new DoctorSpecializationSnapshotDTO
+                    {
+                        SpecializationId = specializationId,
+                        DoctorId = doctorId,
+                    });
                     existingRelations.Add((doctorId, specializationId));
                 }
             }

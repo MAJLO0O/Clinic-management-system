@@ -59,32 +59,46 @@ namespace DataGenerator.Services
                 var doctorIdsForAppointments = await _doctorRepository.GetExistingDoctorsIds(connection, transaction);
                 var patientIdsForAppointments = await _patientRepository.GetExistingPatientIds(connection, transaction);
 
-
-                for (int i = 0; i < recordCount; i++)
+                while(recordCount > 0)
                 {
-                    appointments.Add(_appointmentGenerator.GenerateAppointment(doctorIdsForAppointments, patientIdsForAppointments, appointmentStatusIds, existingAppointments));
+                    var chunkSize = Math.Min(5000, recordCount);
+                    for (int i = 0; i < chunkSize; i++)
+                    {
+                        appointments.Add(_appointmentGenerator.GenerateAppointment(doctorIdsForAppointments, patientIdsForAppointments, appointmentStatusIds, existingAppointments));
+                    }
+                        await _appointmentRepository.InsertAppointments(appointments, connection, transaction);
+                    appointments.Clear();
+                    recordCount -= chunkSize;
                 }
-                foreach(var chunk in appointments.Chunk(1000))
-                {
-                     await _appointmentRepository.InsertAppointments(chunk.ToList(), connection, transaction);
-                }
+                
 
 
                 var appointmentsWithoutMedicalRecord = await _appointmentRepository.GetAppointmentIdsWithoutMedicalRecordAndWhenTheyWereCreated(connection, transaction);
-                var medicalRecords = _medicalRecordGenerator.GenerateMedicalRecords(appointmentsWithoutMedicalRecord);
-                foreach (var chunk in medicalRecords.Chunk(1000))
+                int processed = 0;
+                while(processed < appointmentsWithoutMedicalRecord.Count)
                 {
-                    await _medicalRecordRepository.InsertMedicalRecords(chunk.ToList(), connection, transaction);
+                    var chunkSize = Math.Min(5000, appointmentsWithoutMedicalRecord.Count);
+
+                    var chunk = appointmentsWithoutMedicalRecord.Skip(processed).Take(chunkSize).ToList();
+                    var medicalRecords = _medicalRecordGenerator.GenerateMedicalRecords(chunk);
+                    await _medicalRecordRepository.InsertMedicalRecords(medicalRecords, connection, transaction);
+
+                    processed += chunkSize;
                 }
+
                 var appointmentsWithoutPayment = await _appointmentRepository.GetAppointmentsWithoutPayment(connection, transaction);
                 var paymentMethods = await _paymentMethodRepository.GetExistingPaymentMethodIds(connection, transaction);
                 var paymentStatusIds = await _paymentStatusRepository.GetExistingPaymentStatusIds(connection, transaction);
                 var usedPaymentNumber = await _paymentRepository.GetExistingPaymentNumbers(connection, transaction);
-                var payments = _paymentGenerator.GeneratePayments(appointmentsWithoutPayment, paymentMethods, paymentStatusIds, usedPaymentNumber);
-                
-                foreach (var chunk in payments.Chunk(1000))
+
+                processed = 0;
+                while(processed < appointmentsWithoutPayment.Count)
                 {
-                    await _paymentRepository.InsertPayments(chunk.ToList(), connection, transaction);
+                    var chunkSize = Math.Min(5000, appointmentsWithoutPayment.Count - processed);
+                    var chunk = appointmentsWithoutPayment.Skip(processed).Take(chunkSize).ToList();
+                    var payments = _paymentGenerator.GeneratePayments(chunk, paymentMethods, paymentStatusIds, usedPaymentNumber);
+                    await _paymentRepository.InsertPayments(payments, connection, transaction);
+                    processed += chunkSize;
                 }
                 await transaction.CommitAsync();
             }

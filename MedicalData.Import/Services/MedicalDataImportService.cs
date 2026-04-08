@@ -8,6 +8,7 @@ using MedicalData.Infrastructure.DTOs;
 using MedicalData.Infrastructure.Repositories;
 using Npgsql;
 using DataGenerator.Data;
+using System.Diagnostics;
 
 namespace MedicalData.Import.Services
 {
@@ -50,6 +51,7 @@ namespace MedicalData.Import.Services
         {
             using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
+            Stopwatch stopwatch = Stopwatch.StartNew();
             Console.WriteLine("Cleaning data...");
             await _importDataRepository.CleanAllData(connection);
             await _appointmentStatusRepository.InsertAppointmentStatusAsync(connection);
@@ -63,7 +65,8 @@ namespace MedicalData.Import.Services
             await _appointmentRepository.ImportAppointmentAsync(connection);
             await _medicalRecordRepository.ImportMedicalRecordsAsync(connection);
             await _paymentRepository.ImportPaymentAsync(connection);
-            Console.WriteLine("Done");
+            stopwatch.Stop();
+            Console.WriteLine($"Done in {stopwatch.ElapsedMilliseconds/1000} s");
         }
     }
 }

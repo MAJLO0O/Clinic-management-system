@@ -7,6 +7,7 @@ using Microsoft.Extensions.Configuration;
 using MedicalData.Infrastructure.Repositories;
 using MedicalData.Export.Services;
 using DataGenerator.Data;
+using System.Diagnostics;
 namespace MedicalData.Export
 {
     internal class Program
@@ -37,11 +38,12 @@ namespace MedicalData.Export
                 branchRepository,doctorRepository,doctorSpecializationRepository,medicalRecordRepository, paymentMethodRepository,
                 paymentRepository, patientRepository,specializationRepository, paymentStatusRepository);
 
-
+            Stopwatch stopwatch = Stopwatch.StartNew();
             Console.WriteLine("Export started");
-
+            
             await exportDataService.ExportAppointmentsAsync();
-
+            stopwatch.Stop();
+            Console.WriteLine($"Export completed in {stopwatch.Elapsed.TotalSeconds} seconds");
             Console.WriteLine("Export completed");
         }
     }

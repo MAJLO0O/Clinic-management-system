@@ -1,6 +1,7 @@
 ﻿using DataGenerator.Data;
 using DataGenerator.Generators;
 using MedicalData.Domain.Models;
+using MedicalData.Infrastructure.DTOs;
 using MedicalData.Infrastructure.Repositories;
 using Npgsql;
 using System;
@@ -37,26 +38,39 @@ namespace DataGenerator.Services
             using NpgsqlConnection connection = new(_connectionString);
             await connection.OpenAsync();
             using var transaction = await connection.BeginTransactionAsync();
+            int globalIndex = 0;
             try
             {
                 var existingRelations = await _doctorSpecializationRepository.LoadExistingDoctorsSpecializations(connection, transaction);
                 var branchIds = await _branchRepository.branchIds(connection,transaction);
-                for (int i = 0; i < recordCount; i++)
+                while(recordCount>0)
                 {
-                    doctors.Add(_doctorGenerator.GenerateDoctor(branchIds,i));
-                }
-                foreach(var chunk in doctors.Chunk(1000))
-                {
-                    await _doctorRepository.InsertDoctors(chunk.ToList(), connection, transaction);
+                    
+                    var batchSize = Math.Min(5000, recordCount);
+                    for (int i = 0; i < batchSize; i++)
+                    {
+                        doctors.Add(_doctorGenerator.GenerateDoctor(branchIds, globalIndex));
+                        globalIndex++;
+                    }
+                    await _doctorRepository.InsertDoctors(doctors, connection, transaction);
+                    doctors.Clear();
+                    recordCount -= batchSize;
                 }
                 var specializations = await _specializationRepository.GetExistingSpecializationIds(connection, transaction);
                 var doctorIds = await _doctorRepository.GetExistingDoctorIdsWithoutSpecialization(connection, transaction);
-                var newRelations = _doctorSpecializationGenerator.GenerateDoctorSpecializationRelation(doctorIds, specializations, existingRelations);
-                foreach(var chunk in newRelations.Chunk(1000))
+                var newRelations = new List<DoctorSpecializationSnapshotDTO>();
+                var doctorsCount = doctorIds.Count;
+                int processsed = 0;
+                while (processsed < doctorsCount)
                 {
-                    await _doctorSpecializationRepository.InsertDoctorSpecializations(chunk.ToList(), connection, transaction);
+                    var doctorIdsBatch = doctorIds.Skip(processsed).Take(5000).ToList();
+                    newRelations = _doctorSpecializationGenerator.GenerateDoctorSpecializationRelation(doctorIdsBatch, specializations, existingRelations);
+                    Console.WriteLine($"New Relations: {newRelations.Count}");
+                    await _doctorSpecializationRepository.InsertDoctorSpecializations(newRelations, connection, transaction);
+                    processsed +=5000;
                 }
                 await transaction.CommitAsync();
+                Console.WriteLine("Generated doctor");
             }
             catch (Exception ex)
             {

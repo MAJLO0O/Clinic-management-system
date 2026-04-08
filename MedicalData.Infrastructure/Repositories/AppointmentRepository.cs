@@ -170,7 +170,7 @@ public class AppointmentRepository
                     );";
             await connection.ExecuteAsync(resetSequenceSql);
             transaction.Commit();
-            Console.WriteLine("Imported patient");
+            Console.WriteLine("Imported appointment");
         }
         catch (Exception ex)
         {
