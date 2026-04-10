@@ -9,6 +9,8 @@ using MedicalData.Infrastructure.Repositories;
 using Npgsql;
 using DataGenerator.Data;
 using System.Diagnostics;
+using MongoDB.Driver;
+using MedicalData.Infrastructure.Mappers;
 
 namespace MedicalData.Import.Services
 {
@@ -27,9 +29,9 @@ namespace MedicalData.Import.Services
         private readonly PaymentStatusRepository _paymentStatusRepository;
         private readonly MedicalRecordRepository _medicalRecordRepository;
         private readonly PaymentRepository _paymentRepository;
-        public MedicalDataImportService(string connectionString,DoctorRepository doctorRepository, PatientRepository patientRepository, AppointmentRepository appointmentRepository,
-            ImportDataRepository importDataRepository, AppointmentStatusRepository appointmentStatusRepository,BranchRepository branchRepository,
-            DoctorSpecializationRepository doctorSpecializationRepository,SpecializationRepository specializationRepository, PaymentMethodRepository paymentMethodRepository,
+        public MedicalDataImportService(string connectionString, DoctorRepository doctorRepository, PatientRepository patientRepository, AppointmentRepository appointmentRepository,
+            ImportDataRepository importDataRepository, AppointmentStatusRepository appointmentStatusRepository, BranchRepository branchRepository,
+            DoctorSpecializationRepository doctorSpecializationRepository, SpecializationRepository specializationRepository, PaymentMethodRepository paymentMethodRepository,
             PaymentStatusRepository paymentStatusRepository, MedicalRecordRepository medicalRecordRepository, PaymentRepository paymentRepository)
         {
             _connectionString = connectionString;
@@ -66,7 +68,9 @@ namespace MedicalData.Import.Services
             await _medicalRecordRepository.ImportMedicalRecordsAsync(connection);
             await _paymentRepository.ImportPaymentAsync(connection);
             stopwatch.Stop();
-            Console.WriteLine($"Done in {stopwatch.ElapsedMilliseconds/1000} s");
+            Console.WriteLine($"Done in {stopwatch.ElapsedMilliseconds / 1000} s");
         }
+
+
     }
 }

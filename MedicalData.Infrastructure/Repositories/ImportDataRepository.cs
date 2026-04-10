@@ -1,4 +1,6 @@
 ﻿using Dapper;
+using MedicalData.Infrastructure.MongoModels;
+using MongoDB.Driver;
 using System;
 using System.Collections.Generic;
 using System.Data;
@@ -10,6 +12,7 @@ namespace MedicalData.Infrastructure.Repositories
 {
     public class ImportDataRepository
     {
+
         public async Task CleanAllData(IDbConnection connection)
         {
             var sql = @"TRUNCATE TABLE 
@@ -36,5 +39,7 @@ namespace MedicalData.Infrastructure.Repositories
                 Console.WriteLine($"Error cleaning data: {ex.Message}");
             }
         }
+
+        
     }
 }
