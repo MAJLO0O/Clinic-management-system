@@ -49,6 +49,7 @@ namespace MedicalData.Infrastructure.Mappers
                 PaymentSnapshot = appointment.PaymentId >0 ? new PaymentSnapshot
                 {
                     Id = appointment.PaymentId,
+                    Number = appointment.PaymentNumber,
                     Amount = appointment.PaymentAmount,
                     Method = appointment.PaymentMethod,
                     Status = appointment.PaymentStatus

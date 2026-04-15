@@ -46,7 +46,7 @@ namespace MedicalData.Infrastructure.Repositories
             using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
             var sql = @"select a.id as AppointmentId,
-            a.starting_date_time as StartingDateTime,
+            a.starting_date_time as AppointmentStartingDateTime,
             ast.status as AppointmentStatus, 
             mr.note as MedicalRecordNote,
             mr.created_at as MedicalRecordCreatedAt,

@@ -1,4 +1,5 @@
-﻿using System;
+﻿using MongoDB.Bson.Serialization.Attributes;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -8,7 +9,10 @@ namespace MedicalData.Infrastructure.MongoModels
 {
     public class MedicalRecordSnapshot
     {
+        [BsonElement("note")]
         public string Note { get; set; }
+
+        [BsonElement("createdAt")]
         public DateTime CreatedAt { get; set; }
     }
 }

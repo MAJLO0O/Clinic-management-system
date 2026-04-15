@@ -5,6 +5,7 @@ using DataGenerator.Services;
 using Microsoft.Extensions.Configuration;
 using MedicalData.Infrastructure.Repositories;
 using System.Diagnostics;
+using MongoDB.Driver;
 
 int recordCount()
 {
@@ -30,7 +31,11 @@ var configuration = new ConfigurationBuilder()
     .AddJsonFile("appsettings.json", optional: false)
     .Build();
 
-string connectionString = configuration.GetConnectionString("Postgres");
+string connectionString = configuration.GetConnectionString("Postgres") ?? throw new Exception("Connection string not found"); ;
+string mongoConnectionString = configuration.GetConnectionString("MongoDb") ?? throw new Exception ("Mongo Connection string not found");
+
+MongoClient mongoClient = new MongoClient(mongoConnectionString);
+
 
 
 DoctorGenereator doctorGenerator = new();
@@ -62,7 +67,7 @@ List<Appointment> appointments = new List<Appointment>();
 DoctorSeederService doctorSeederService = new(connectionString, specializationRepository, doctorRepository, doctorSpecializationRepository,branchRepository ,doctorGenerator, doctorSpecializationGenerator);
 PatientDataSeeder patientDataSeeder = new(connectionString,patientGenerator,patientRepository);
 AppointmentDataSeeder appointmentDataSeeder = new(connectionString, appointmentRepository, appointmentStatusRepository, appointmentGenerator, doctorRepository, patientRepository, medicalRecordRepository,medicalRecordGenerator,paymentRepository ,paymentMethodRepository, paymentStatusRepository, paymentGenerator);
-IndexBenchmarkService indexBenchmarkService = new(connectionString);
+IndexBenchmarkService indexBenchmarkService = new(connectionString, mongoClient);
 DataCleanerService dataCleanerService = new(connectionString);
 
 
@@ -123,7 +128,9 @@ if (int.TryParse(input, out int choice))
                 Console.WriteLine("Benchmark");
                 await indexBenchmarkService.BenchmarkWithIndexes();
                 await indexBenchmarkService.BenchmarkWithoutIndexes();
-        break;
+                await indexBenchmarkService.BenchmarkMongoWithIndexes();
+                await indexBenchmarkService.BenchmarkMongoWithoutIndexes();
+            break;
         
         default:
                 Console.WriteLine("Invalid choice. Please select 1 or 2.");
