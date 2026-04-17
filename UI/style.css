@@ -1,0 +1,55 @@
+header{
+    text-align: center;
+
+}
+.databaseOperations{
+    margin-top: 100px;
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+}
+.operation{
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 40px;
+    border: 1px solid black;
+    border-top: 4px solid #f1c40f;
+    border-radius: 10px;
+    text-align: center;
+    width: 200px;
+    height: 200px;
+    box-shadow: 2px 2px 5px rgba(0,0,0,0.3);
+}
+.btn-section{
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+    gap: 10px;
+}
+.btn-section .btn{
+    flex: 1;
+}
+.btn{
+    padding: 10px;
+    border: none;
+    background-color: #f1c40f;
+    color: black;
+    border-radius: 5px;
+    cursor: pointer;
+}
+.clear-btn{
+    background-color: red;
+}
+
+
+
+/* animations */
+.operation:hover{
+    transform: translateY(-3px);
+    border-color: #f1c40f;
+}
+.btn:hover{
+    transform: scale(1.03);
+}
+
