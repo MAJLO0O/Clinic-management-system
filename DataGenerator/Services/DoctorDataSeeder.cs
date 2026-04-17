@@ -38,9 +38,9 @@ namespace DataGenerator.Services
             using NpgsqlConnection connection = new(_connectionString);
             await connection.OpenAsync();
             using var transaction = await connection.BeginTransactionAsync();
-            int globalIndex = 0;
             try
             {
+                var globalIndex = await _doctorRepository.CountDoctorsAsync(connection,transaction);
                 var existingRelations = await _doctorSpecializationRepository.LoadExistingDoctorsSpecializations(connection, transaction);
                 var branchIds = await _branchRepository.branchIds(connection,transaction);
                 while(recordCount>0)
@@ -77,7 +77,6 @@ namespace DataGenerator.Services
                 await transaction.RollbackAsync();
                 Console.WriteLine($"Error seeding doctors: {ex.Message}");
                 throw;
-
             }
         }
     }

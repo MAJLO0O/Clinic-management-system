@@ -20,6 +20,12 @@ namespace MedicalData.Infrastructure.Repositories
 {
     public class DoctorRepository
     {
+        public async Task<int> CountDoctorsAsync(IDbConnection connection, IDbTransaction transaction)
+        {
+            var sql = "select count(*) from doctor";
+            return await connection.ExecuteScalarAsync<int>(sql, transaction: transaction);
+
+        }
         public async Task InsertDoctors(List<Doctor> doctors, IDbConnection connection, IDbTransaction transaction)
         {
             var sql = new StringBuilder();

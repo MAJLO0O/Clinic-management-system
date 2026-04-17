@@ -12,6 +12,7 @@ namespace MedicalData.Infrastructure.MongoModels
     {
         [BsonElement("id")]
         public int Id { get; set; }
+
         [BsonElement("startingDateTime")]
         public DateTime StartingDateTime { get; set; }
 

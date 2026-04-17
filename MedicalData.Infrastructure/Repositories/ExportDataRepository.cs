@@ -88,5 +88,53 @@ namespace MedicalData.Infrastructure.Repositories
             var result = await connection.QueryAsync<AppointmentExport>(sql, new { offset, chunk });
             return result.ToList();
         }
-    }
+    
+    public async Task<List<AppointmentExport>> GetAboveId(int batchSize, int maxId)
+        {
+            using var connection = new NpgsqlConnection(_connectionString);
+            await connection.OpenAsync();
+            var sql = @"select a.id as AppointmentId,
+            a.starting_date_time as AppointmentStartingDateTime,
+            ast.status as AppointmentStatus, 
+            mr.note as MedicalRecordNote,
+            mr.created_at as MedicalRecordCreatedAt,
+            pay.id as PaymentId,
+            pay.payment_number as PaymentNumber,
+            pay.amount as PaymentAmount,
+            pm.method as PaymentMethod,
+            ps.status as PaymentStatus,
+            d.id as DoctorId,
+            d.first_name as DoctorFirstName,
+            d.last_name as DoctorLastName,
+            d.pesel as DoctorPesel,
+            ARRAY_AGG(distinct s.name) filter (where s.name is not null) as DoctorSpecializations,
+            b.id as DoctorBranchId,
+            b.city as DoctorBranchCity,
+            b.address as DoctorBranchAddress,
+            p.id as PatientId,
+            p.first_name as PatientFirstName,
+            p.last_name as PatientLastName,
+            p.pesel as PatientPesel
+            from appointment a
+            join doctor d on a.doctor_id = d.id 
+            join branch b on d.branch_id = b.id
+            join patient p on a.patient_id  = p.id
+            left join payment pay on a.id = pay.appointment_id
+            left join payment_status ps on pay.payment_status_id = ps.id
+            left join payment_method pm on pay.payment_method_id = pm.id
+            left join doctor_specialization ds on d.id = ds.doctor_id
+            left join specialization s on ds.specialization_id = s.id
+            left join medical_record mr on a.id = mr.appointment_id
+            join appointment_status ast on a.appointment_status_id = ast.id
+            where a.id > @maxId
+            group by a.id, a.starting_date_time, ast.status, mr.note, mr.created_at, pay.id,
+            pay.payment_number, pay.amount, pm.method, ps.status, d.id, d.first_name, d.last_name,
+            d.pesel, b.id, b.city, b.address, p.id, p.first_name, p.last_name, p.pesel
+            order by a.id
+            limit @batchSize";
+
+            var result = await connection.QueryAsync<AppointmentExport>(sql, new { batchSize, maxId });
+            return result.ToList();
+        }
+    } 
 }

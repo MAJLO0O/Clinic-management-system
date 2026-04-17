@@ -24,7 +24,7 @@ namespace MedicalData.Import.Services
         public async Task ImportDataToMongoDB()
         {
             using var mongoClient = new MongoClient(_mongoConnectionString);
-            var mongoImportRepository = new MongoImportRepository(mongoClient);
+            var mongoImportRepository = new MongoRepository(mongoClient);
             var offset = 0;
             var chunk = 10000;
             while (true) 
