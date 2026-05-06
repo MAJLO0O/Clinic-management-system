@@ -1,10 +1,10 @@
 const syncButton = document.getElementById("sync-btn");
-result = document.getElementById("seed-result");
+const seedResult = document.getElementById("seed-result");
 
 syncButton.addEventListener("click",handleSync);
 
 async function handleSync () {
-    result.innerText= "Synchronizing...";
+    seedResult.innerText= "Synchronizing...";
     syncButton.disabled = true;
      try{
         const response = await fetch("https://localhost:7083/api/admin/sync",{
@@ -16,12 +16,12 @@ async function handleSync () {
         if (!response.ok) {
             throw new Error(`HTTP error: ${response.status}`);
         }
-     result.innerText = "Db's sync'ed";
+     seedResult.innerText = "Db's sync'ed";
      }
      catch(error)
      {
         console.log(error);
-        result.innerText = "Error while synchronizing data";
+        seedResult.innerText = "Error while synchronizing data";
      }
      syncButton.disabled = false;
 }

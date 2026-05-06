@@ -1,21 +1,21 @@
 const seedBtn = document.getElementById("seed-btn");
 const recordCount = document.getElementById("recordCount");
-result = document.getElementById("seed-result");
+seedResult = document.getElementById("seed-result");
 
 seedBtn.addEventListener("click",handleSeed);
 
 
 async function handleSeed() {
     seedBtn.disabled = true;
+    seedResult.innerText = "";
 const count = parseInt(recordCount.value);
-
 if(!count || count<=0)
 {
-    result.innerText = "Invalid number of records";
+    seedResult.innerText = "Invalid number of records";
         return;
 }
-    result.innerText = "Processing...";
-
+    seedResult.innerText = "Processing...";
+console.log(count);
     try{
 
         const response = await fetch("https://localhost:7083/api/admin/generator", {
@@ -31,11 +31,11 @@ if(!count || count<=0)
 
         const data = await response.json();
 
-        result.innerText = `Generated: ${data.processedCount}`;
+        seedResult.innerText = `Generated: ${data.processedCount}`;
     }
     catch(error){
         console.error(error)
-        result.innerText = "Error while seeding Data";
+        seedResult.innerText = "Error while seeding Data";
     }
     seedBtn.disabled = false;
 }
