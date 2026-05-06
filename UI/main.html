@@ -1,0 +1,95 @@
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Main Page</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>Clinic Management System</h1>
+    </header>
+
+    <section class="databaseOperations">
+        <div class="operation">
+            <h3>Seed/Sync database</h3>
+             <p class="description">
+    Generate test data and optionally sync with MongoDB
+            </p>
+            <input type="number" id="recordCount" class="input">
+            <p id="seed-result"></p>
+            <div class="btn-section">
+            <button class="seed-btn btn" id="seed-btn" type="button">Seed</button>
+            <button class="sync-btn btn" id="sync-btn" type="button">Sync</button>
+            </div>
+        </div>
+
+        <div class="operation"><h3>Export/Import Data</h3>
+            <p class="description">
+                Export or Import Data from DataBase
+            </p>
+            <p id="export-result"></p>
+            <div class="btn-section">
+                <a href="https://localhost:7083/api/admin/export" class="btn">Export</a>
+                <input type="file" accept=".zip" class="btn" id="import-file">
+                <button class="import-btn btn" id="import-btn" type="button">Import</button>
+            </div>
+            
+        </div>
+
+        
+
+        <div class="operation"><h3>View Clinic Data</h3>
+            <p class="descripton">
+                View data in database
+            </p>
+             <select id="database-choice">
+                <option value="PostgreSql">PostgreSql</option>
+                <option value="MongoDb">MongoDb</option>
+            </select>
+            <select id="sql-entity">
+                <option value="patients">Patients</option>
+                <option value="doctors">Doctors</option>
+                <option value="appointments">Appointments</option>
+                <option value="payments">Payments</option>
+            </select>
+             <p id="view-result"></p>
+            <div class="btn-section">
+                <button class="view-btn btn" id="view-btn" type="button">View</button>
+                <button class="create-btn btn" id="create-btn" type="button">Create</button>
+            </div>
+        </div>
+
+        <div class="operation"><h3>Clear Database</h3>
+            <p class="description">
+                Clear all data from database
+            </p>
+            <button class="clear-btn btn" id="clear-btn" type="button">Clear</button>
+            <p id="clear-result"></p>
+        </div>
+
+        
+    </section>
+    <div class="test-section">
+        <button id="test-btn" class="test-btn btn">Test</button>
+    </div>
+    <div class="overlay hidden"></div>
+    <div class="modal hidden">
+        <button id="close-modal-btn" class="close-btn btn">X</button>
+        <div id="result-container"></div>
+        <section class="navigation">
+        <button id="prev-btn" class="skip-btn btn">Previous</button>
+        <button id="next-btn" class="skip-btn btn">Next</button>
+        </section>
+    </div>
+    
+</body>
+<script src="js/generateButtonApi.js"></script>
+<script src="js/syncButtonApi.js"></script>
+<script src="js/importButtonApi.js"></script>
+<script src="js/cleanDataButtonApi.js"></script>
+<script src="js/readButtonsVisibility.js"></script>
+<script src="js/viewButtonApi.js"></script>
+<script src="js/testButtonApi.js"></script>
+<script src="js/createBtnApi.js"></script>
+<script src="js/updateBtnApi.js"></script>
+</html>
