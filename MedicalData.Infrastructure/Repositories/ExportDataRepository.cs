@@ -8,15 +8,16 @@ using Dapper;
 using MedicalData.Infrastructure.DTOs;
 using System.Xml.XPath;
 using MedicalData.Infrastructure.NoSqlDTOs;
+using Microsoft.Extensions.Configuration;
 
 namespace MedicalData.Infrastructure.Repositories
 {
     public class ExportDataRepository
     {
         private readonly string _connectionString;
-        public ExportDataRepository(string connectionString)
+        public ExportDataRepository(IConfiguration configuration)
         {
-            _connectionString = connectionString;
+            _connectionString = configuration.GetConnectionString("Postgres") ?? throw new Exception("Couldn't find connection string");
         }
 
         public async Task<List<AppointmentSnapshotDTO>> GetExportDataAsync()

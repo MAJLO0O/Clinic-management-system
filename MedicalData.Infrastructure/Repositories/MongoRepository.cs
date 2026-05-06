@@ -1,4 +1,5 @@
-﻿using MedicalData.Infrastructure.MongoModels;
+﻿using MedicalData.Infrastructure.Helpers;
+using MedicalData.Infrastructure.MongoModels;
 using MongoDB.Bson;
 using MongoDB.Driver;
 using System;
@@ -12,7 +13,7 @@ namespace MedicalData.Infrastructure.Repositories
     public class MongoRepository
     {
         private readonly IMongoCollection<AppointmentDocument> _appointmentCollection;
-        public MongoRepository(MongoClient client)
+        public MongoRepository(IMongoClient client)
         {
             var mongoDatabase = client.GetDatabase("ClinicManagementSystem");
             _appointmentCollection = mongoDatabase.GetCollection<AppointmentDocument>("appointment");
@@ -25,6 +26,17 @@ namespace MedicalData.Infrastructure.Repositories
         {
             var MaxId = await _appointmentCollection.Find(_=>true).SortByDescending(x=>x.Id).Limit(1).FirstOrDefaultAsync();
             return MaxId?.Id??0;
+        }
+        public async Task<PagedResult<AppointmentDocument>> GetMongoAppointment(int lastId, int pageSize, CancellationToken cancellationToken)
+        {
+            var filter = Builders<AppointmentDocument>.Filter.Gt(x => x.Id, lastId);
+            var appointments = await _appointmentCollection.Find(filter).SortBy(x => x.Id).Limit(pageSize+1).ToListAsync(cancellationToken);
+            
+            return PaginationHelper.BuildPagedResult(appointments, pageSize, x => x.Id);
+        }
+        public async Task CleanMongoDb()
+        {
+            _appointmentCollection.DeleteMany(_ => true);
         }
     }
 }

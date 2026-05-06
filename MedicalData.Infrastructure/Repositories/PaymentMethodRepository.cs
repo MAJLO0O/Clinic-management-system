@@ -1,13 +1,16 @@
 ﻿using Dapper;
+using MedicalData.Infrastructure.DTOs;
+using MedicalData.Infrastructure.Helpers;
+using Microsoft.VisualBasic;
+using SharpCompress.Compressors.Xz;
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.IO.Compression;
 using System.Linq;
 using System.Text;
-using System.Threading.Tasks;
 using System.Text.Json;
-using MedicalData.Infrastructure.DTOs;
-using MedicalData.Infrastructure.Helpers;
+using System.Threading.Tasks;
 
 namespace MedicalData.Infrastructure.Repositories
 {
@@ -19,59 +22,86 @@ namespace MedicalData.Infrastructure.Repositories
             var paymentMethodIds = await connection.QueryAsync<int>(sql, transaction: transaction);
             return paymentMethodIds.ToList();
         }
-        public async Task ExportPaymentMethodsAsync(IDbConnection connection)
+        public async Task WritePaymentMethodsJsonAsync(IDbConnection connection, Stream stream, CancellationToken ct)
         {
             var sql = "select id as Id, method as Method from payment_method";
             using var reader = await connection.ExecuteReaderAsync(sql);
-            var path = Path.Combine(PathHelper.GetDataPath(), "exported_paymentmethods.json");
-            await using var stream = File.Create(path);
-            using var writer = new Utf8JsonWriter(stream);
+
+            await using var writer = new Utf8JsonWriter(stream);
             var idIndex = reader.GetOrdinal("Id");
             var methodIndex = reader.GetOrdinal("Method");
-            try
-            {
-                writer.WriteStartArray();
+             
+            writer.WriteStartArray();
                 while (reader.Read())
                 {
-                    var paymentMethod = new PaymentMethodSnapshotDTO
-                    {
-                        Id = reader.GetInt32(idIndex),
-                        Method = reader.GetString(methodIndex)
-                    };
+                    ct.ThrowIfCancellationRequested();
+                    var paymentMethod = MapToPaymentMethod(reader, idIndex, methodIndex);
                     JsonSerializer.Serialize(writer, paymentMethod);
                 }
                 writer.WriteEndArray();
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error exporting payment methods: {ex.Message}");
-                throw;
-            }
-            finally
-            {
-                await writer.FlushAsync();
-            }
+             
+            await writer.FlushAsync();
         }
-        public async Task ImportPaymentMethodAsync(IDbConnection connection)
+        public async Task ExportToJsonLocalAsync(IDbConnection connection, CancellationToken ct)
         {
-            var path = Path.Combine(PathHelper.GetDataPath(), "exported_paymentmethods.json");
-            var json = await File.ReadAllTextAsync(path);
-            var methods = JsonSerializer.Deserialize<List<PaymentMethodSnapshotDTO>>(json);
-            if (methods == null)
-                throw new Exception("Couldn't read the method file because it was empty");
+            var path = Path.Combine(Path.GetTempPath(), "exported_payment_methods.json");
+            await using var stream = File.Create(path);
+            
+            await WritePaymentMethodsJsonAsync(connection, stream, ct);
+        }
+        public async Task AddToZipAsync(IDbConnection connection, ZipArchive zip,CancellationToken ct)
+        {
+            var entry = zip.CreateEntry("exported_payment_methods.json");
+            await using var entryStream = entry.Open();
+
+            await WritePaymentMethodsJsonAsync(connection, entryStream, ct);
+        }
+        public PaymentMethodSnapshotDTO MapToPaymentMethod(IDataReader reader, int idIndex, int methodIndex)
+        {
+            return new PaymentMethodSnapshotDTO
+            {
+                Id = reader.GetInt32(idIndex),
+                Method = reader.GetString(methodIndex)
+            };
+        }
+
+
+        public async Task ImportFromJsonAsync(IDbConnection connection, IDbTransaction transaction, CancellationToken cancellationToken)
+        {
+            var path = Path.Combine(Path.GetTempPath(), "exported_payment_methods.json");
+            using var stream = File.OpenRead(path);
+            await ImportPaymentMethodAsync(connection, transaction, stream, cancellationToken);
+        }
+
+        public async Task ImportFromZipAsync(IDbConnection connection, IDbTransaction transaction, ZipArchive zip, CancellationToken cancellationToken)
+        {
+            var entry = zip.GetEntry("exported_payment_methods.json");
+            if (entry == null)
+            {
+                throw new FileNotFoundException("exported_payment_methods.json not found in the zip archive.");
+            }
+            using var entryStream = entry.Open();
+            await ImportPaymentMethodAsync(connection, transaction, entryStream, cancellationToken);
+        }
+
+        public async Task ImportPaymentMethodAsync(IDbConnection connection, IDbTransaction transaction, Stream stream, CancellationToken cancellationToken)
+        {
+            var json = await JsonSerializer.DeserializeAsync<List<PaymentMethodSnapshotDTO>>(stream, cancellationToken: cancellationToken);
+            if (json == null)
+                throw new InvalidOperationException("Couldn't read the method file because it was empty");
+            var sql = "insert into payment_method (id,method) values (@Id,@Method)";
             try
             {
-                foreach (var method in methods)
+                foreach (var method in json)
                 {
-                    var sql = "insert into payment_method (id,method) values (@Id,@Method)";
-                    await connection.ExecuteAsync(sql, method);
+                    await connection.ExecuteAsync(new CommandDefinition(sql, method, transaction, cancellationToken: cancellationToken));
                 }
                 var resetSequenceSql = @"SELECT setval(
                     pg_get_serial_sequence('payment_method','id'),
                     COALESCE((SELECT MAX(id) FROM payment_method),1),
                     true
                     );";
-                await connection.ExecuteAsync(resetSequenceSql);
+                await connection.ExecuteAsync(new CommandDefinition(resetSequenceSql, transaction, cancellationToken: cancellationToken));
                 Console.WriteLine("Imported payment_method");
             }
             catch (Exception ex)

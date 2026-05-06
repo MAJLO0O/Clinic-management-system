@@ -1,13 +1,9 @@
-﻿using DataGenerator.Data;
-using DataGenerator.Generators;
+﻿using DataGenerator.Generators;
 using MedicalData.Domain.Models;
 using MedicalData.Infrastructure.Repositories;
+using Microsoft.Extensions.Configuration;
 using Npgsql;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using System.Data;
 
 namespace DataGenerator.Services
 {
@@ -17,18 +13,15 @@ namespace DataGenerator.Services
         private readonly string _connectionString;
         private PatientGenerator _patientGenerator;
         private readonly PatientRepository _patientRepository;
-        public PatientDataSeeder(string connectionString,PatientGenerator patientGenerator, PatientRepository patientRepository)
+        public PatientDataSeeder(IConfiguration configuration,PatientGenerator patientGenerator, PatientRepository patientRepository)
         {
-            _connectionString = connectionString;
+            _connectionString = configuration.GetConnectionString("Postgres") ?? throw new InvalidOperationException("Coulnd't find connection string");
             _patientGenerator = patientGenerator;
             _patientRepository = patientRepository;
         }
-        public async Task SeedPatientsAsync(int recordCount)
+        public async Task SeedPatientsAsync(IDbConnection connection, IDbTransaction transaction, int recordCount)
         {
             List<Patient> patients = new List<Patient>();
-            using NpgsqlConnection connection = new(_connectionString);
-            await connection.OpenAsync();
-            using var transaction = await connection.BeginTransactionAsync();
             try
             {
                 int globalIndex = 0;
@@ -45,12 +38,10 @@ namespace DataGenerator.Services
                     recordCount -= batchSize;
                 }
             Console.WriteLine("Patients inserted successfully!");
-            await transaction.CommitAsync();
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Error inserting Patients: {ex.Message}");
-                await transaction.RollbackAsync();
                 throw;
             }
 

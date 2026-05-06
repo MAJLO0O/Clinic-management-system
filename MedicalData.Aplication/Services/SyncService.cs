@@ -15,16 +15,18 @@ namespace MedicalData.Aplication.Services
     {
         private readonly string _connectionString;
         private readonly string _mongoConnectionString;
+        private readonly IConfiguration _configuration;
         public SyncService(IConfiguration configuration)
         {
             _connectionString = configuration.GetConnectionString("Postgres") ?? throw new Exception("Couldn't find postgreSql connection string");
             _mongoConnectionString = configuration.GetConnectionString("MongoDb") ?? throw new Exception("Couldn't find MongoDb connection string");
+            _configuration = configuration;
         }
         public async Task SyncAsync()
         {
          var client = new MongoClient(_mongoConnectionString);
          var mongoImport = new MongoRepository(client);
-         var exportRepository = new ExportDataRepository(_connectionString);
+         var exportRepository = new ExportDataRepository(_configuration);
             var mapper = new AppointmentMapper();
             var maxId = await mongoImport.GetMaxId();
 

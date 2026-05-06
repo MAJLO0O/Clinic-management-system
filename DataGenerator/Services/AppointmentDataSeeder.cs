@@ -1,14 +1,9 @@
-﻿using DataGenerator.Data;
-using DataGenerator.Generators;
+﻿using DataGenerator.Generators;
 using MedicalData.Domain.Models;
 using MedicalData.Infrastructure.Repositories;
+using Microsoft.Extensions.Configuration;
 using Npgsql;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Security.Cryptography.X509Certificates;
-using System.Text;
-using System.Threading.Tasks;
+using System.Data;
 
 namespace DataGenerator.Services
 {
@@ -27,13 +22,13 @@ namespace DataGenerator.Services
         private readonly PaymentStatusRepository _paymentStatusRepository;
         private readonly PaymentGenerator _paymentGenerator;
 
-        public AppointmentDataSeeder(string connectionString,
+        public AppointmentDataSeeder(IConfiguration configuration,
             AppointmentRepository appointmentRepository, AppointmentStatusRepository appointmentStatusRepository,
             AppointmentGenerator appointmentGenerator, DoctorRepository doctorRepository, PatientRepository patientRepository,
             MedicalRecordRepository medicalRecordRepository,MedicalRecordGenerator medicalRecordGenerator , PaymentRepository paymentRepository, PaymentMethodRepository paymentMethodRepository,
             PaymentStatusRepository paymentStatusRepository, PaymentGenerator paymentGenerator)
         {
-            _connectionString = connectionString;
+            _connectionString = configuration.GetConnectionString("Postgres") ?? throw new InvalidOperationException("Coulnd't find connection string");
             _appointmentRepository = appointmentRepository;
             _appointmentStatusRepository = appointmentStatusRepository;
             _appointmentGenerator = appointmentGenerator;
@@ -46,12 +41,9 @@ namespace DataGenerator.Services
             _paymentStatusRepository = paymentStatusRepository;
             _paymentGenerator = paymentGenerator;
         }
-        public async Task SeedAppointmentAsync(int recordCount)
+        public async Task SeedAppointmentAsync(IDbConnection connection,IDbTransaction transaction,int recordCount)
         {
             List<Appointment> appointments = new();
-            using NpgsqlConnection connection = new (_connectionString);
-            await connection.OpenAsync();
-            using var transaction = await connection.BeginTransactionAsync();
             try
             {
                 var existingAppointments = await _appointmentRepository.GetExistingAppointments(connection,transaction);
@@ -100,12 +92,10 @@ namespace DataGenerator.Services
                     await _paymentRepository.InsertPayments(payments, connection, transaction);
                     processed += chunkSize;
                 }
-                await transaction.CommitAsync();
             }
 
             catch (Exception ex)
             {
-                await transaction.RollbackAsync();
                 Console.WriteLine($"Error seeding Appointments: {ex.Message}");
                 throw;
             }

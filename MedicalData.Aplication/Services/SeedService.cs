@@ -7,31 +7,46 @@ using System.Text;
 using System.Threading.Tasks;
 using MedicalData.Infrastructure.Repositories;
 using DataGenerator.Generators;
-using DataGenerator.Data;
+using System.Data;
 namespace MedicalData.Aplication.Services
 {
     public class SeedService
     {
         private readonly string _connectionString;
+        private readonly IConfiguration _configuration;
 
         public SeedService(IConfiguration configuration)
         {
+            _configuration = configuration;
             _connectionString = configuration.GetConnectionString("Postgres") ?? throw new Exception("Couldn't find postgreSql connection string");
         }
         public async Task SeedAllAsync(int recordCount)
         {
-            var doctorSeedService = new DoctorSeederService(_connectionString, new SpecializationRepository(), new DoctorRepository(), new DoctorSpecializationRepository(),
+            using var connection = new Npgsql.NpgsqlConnection(_connectionString);
+            await connection.OpenAsync();
+                using var transaction = await connection.BeginTransactionAsync();
+            var doctorSeedService = new DoctorSeederService(_configuration, new SpecializationRepository(), new DoctorRepository(), new DoctorSpecializationRepository(),
                 new BranchRepository(), new DoctorGenereator(), new DoctorSpecializationGenerator());
 
-            var appointmentSeedService = new AppointmentDataSeeder(_connectionString, new AppointmentRepository(), new AppointmentStatusRepository(), new AppointmentGenerator(),
+            var appointmentSeedService = new AppointmentDataSeeder(_configuration, new AppointmentRepository(), new AppointmentStatusRepository(), new AppointmentGenerator(),
                 new DoctorRepository(), new PatientRepository(), new MedicalRecordRepository(), new MedicalRecordGenerator(), new PaymentRepository(), new PaymentMethodRepository(),
                 new PaymentStatusRepository(), new PaymentGenerator());
 
-            var patientSeedService = new PatientDataSeeder(_connectionString, new PatientGenerator(), new PatientRepository());
+            var patientSeedService = new PatientDataSeeder( _configuration, new PatientGenerator(), new PatientRepository());
+            try
+            {
 
-            await doctorSeedService.SeedDoctorsAsync(recordCount);
-            await patientSeedService.SeedPatientsAsync(2*recordCount);
-            await appointmentSeedService.SeedAppointmentAsync(5*recordCount);
+                await doctorSeedService.SeedDoctorsAsync(connection, transaction, recordCount);
+                await patientSeedService.SeedPatientsAsync(connection, transaction, 2 * recordCount);
+                await appointmentSeedService.SeedAppointmentAsync(connection, transaction, 5 * recordCount);
+                transaction.Commit();
+                Console.WriteLine("Seeded data");
+            }
+            catch(Exception ex)
+            {
+                Console.WriteLine($"Error while seeding data {ex.Message}");
+                throw;
+            }
         }
     }
 }

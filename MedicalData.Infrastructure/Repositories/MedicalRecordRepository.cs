@@ -5,6 +5,7 @@ using MedicalData.Infrastructure.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.IO.Compression;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
@@ -34,68 +35,96 @@ namespace MedicalData.Infrastructure.Repositories
             sql.Append(string.Join(",", values));
             await connection.ExecuteAsync(sql.ToString(), parameters, transaction);
         }
-        public async Task ExportMedicalRecordAsync(IDbConnection connection)
+        public async Task WriteMedicalRecordsJsonAsync(IDbConnection connection, Stream stream, CancellationToken ct)
         {
             var sql = "select appointment_id as AppointmentId, note as Note, created_at as CreatedAt from medical_record";
 
             using var reader = await connection.ExecuteReaderAsync(sql);
-            var path = Path.Combine(PathHelper.GetDataPath(), "exported_medicalrecords.json");
-            await using var stream = File.Create(path);
             using var writer = new Utf8JsonWriter(stream);
 
             var appointmentIdIndex = reader.GetOrdinal("AppointmentId");
             var noteIndex = reader.GetOrdinal("Note");
             var createdAtIndex = reader.GetOrdinal("CreatedAt");
-            try
-            {
                 writer.WriteStartArray();
                 while (reader.Read())
                 {
-                    var medicalRecord = new MedicalRecordSnapshotDTO
-                    {
-                        AppointmentId = reader.GetInt32(appointmentIdIndex),
-                        Note = reader.GetString(noteIndex),
-                        CreatedAt = reader.GetDateTime(createdAtIndex)
-                    };
+                    ct.ThrowIfCancellationRequested();
+                    var medicalRecord = MapToMedicalRecord(reader,appointmentIdIndex,noteIndex,createdAtIndex);
                     JsonSerializer.Serialize(writer, medicalRecord);
                 }
                 writer.WriteEndArray();
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error during export: {ex.Message}");
-                throw;
-            }
-            finally
-            {
+
                 await writer.FlushAsync();
-            }
         }
-        public async Task ImportMedicalRecordsAsync(IDbConnection connection)
+        public async Task ExportToJsonLocalAsync(IDbConnection connection, CancellationToken ct)
         {
-            var path = Path.Combine(PathHelper.GetDataPath(), "exported_medicalrecords.json");
-            await using var stream = File.OpenRead(path);
+            ct.ThrowIfCancellationRequested();
+            var path = Path.Combine(Path.GetTempPath(), "exported_medical_records.json");
+            await using var stream = File.Create(path);
+
+            await WriteMedicalRecordsJsonAsync(connection, stream, ct);
+        }
+        public async Task AddToZipAsync(IDbConnection connection,ZipArchive zip ,CancellationToken ct)
+        {
+            var entry = zip.CreateEntry("exported_medical_records.json");
+            await using var entryStream = entry.Open();
+
+            await WriteMedicalRecordsJsonAsync(connection, entryStream, ct);
+        }
+
+        public MedicalRecordSnapshotDTO MapToMedicalRecord(IDataReader reader, int appointmentIdIndex, int noteIndex, int createdAtIndex)
+        {
+            return new MedicalRecordSnapshotDTO
+            {
+                AppointmentId = reader.GetInt32(appointmentIdIndex),
+                Note = reader.GetString(noteIndex),
+                CreatedAt = reader.GetDateTime(createdAtIndex)
+            };
+        }
+
+        public async Task ImportFromJsonAsync(IDbConnection connection, IDbTransaction transaction, CancellationToken ct)
+        {
+            var path = Path.Combine(Path.GetTempPath(), "exported_medical_records.json");
+            using var stream = File.OpenRead(path);
+
+            await ImportMedicalRecordsAsync(connection, transaction, stream, ct);
+        }
+
+        public async Task ImportFromZipAsync(IDbConnection connection, IDbTransaction transaction, ZipArchive zip, CancellationToken cancellationToken)
+        {
+            var entry = zip.GetEntry("exported_medical_records.json");
+            if (entry == null)
+            {
+                throw new FileNotFoundException("The file exported_medical_records.json was not found in the zip archive.");
+            }
+            using var entryStream = entry.Open();
+            await ImportMedicalRecordsAsync(connection, transaction, entryStream, cancellationToken);
+        }
+
+
+        public async Task ImportMedicalRecordsAsync(IDbConnection connection,IDbTransaction transaction, Stream stream, CancellationToken cancellationToken)
+        {
             var sql = new StringBuilder();
             sql.Append(@"INSERT INTO medical_record (appointment_id, note, created_at) VALUES ");
-            using var transaction = connection.BeginTransaction();
             var batch = new List<string>();
             var parameters = new DynamicParameters();
             try
             {
-                await foreach (var record in JsonSerializer.DeserializeAsyncEnumerable<MedicalRecordSnapshotDTO>(stream))
+                await foreach (var record in JsonSerializer.DeserializeAsyncEnumerable<MedicalRecordSnapshotDTO>(stream, cancellationToken: cancellationToken))
                 {
                     if (record != null)
                     {
+                        
                         int i = batch.Count;
                         batch.Add($"(@AppointmentId{i}, @Note{i}, @CreatedAt{i})");
-                        parameters.Add($"@AppointmentId{i}", record.AppointmentId);
-                        parameters.Add($"@Note{i}", record.Note);
-                        parameters.Add($"@CreatedAt{i}", record.CreatedAt);
+                        parameters.Add($"AppointmentId{i}", record.AppointmentId);
+                        parameters.Add($"Note{i}", record.Note);
+                        parameters.Add($"CreatedAt{i}", record.CreatedAt);
 
                         if (batch.Count == 5000)
                         {
                             sql.Append(string.Join(",", batch));
-                            await connection.ExecuteAsync(sql.ToString(), parameters, transaction);
+                            await connection.ExecuteAsync(new CommandDefinition(sql.ToString(), parameters, transaction, cancellationToken: cancellationToken));
                             batch.Clear();
                             parameters = new DynamicParameters();
                             sql.Clear();
@@ -106,15 +135,12 @@ namespace MedicalData.Infrastructure.Repositories
                 if (batch.Count > 0)
                 {
                     sql.Append(string.Join(",", batch));
-                    await connection.ExecuteAsync(sql.ToString(), parameters, transaction);
+                    await connection.ExecuteAsync(new CommandDefinition(sql.ToString(), parameters, transaction, cancellationToken: cancellationToken));
                 }
-                transaction.Commit();
-                Console.WriteLine("Imported medical_record");
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Error importing medical records: {ex.Message}");
-                transaction.Rollback();
                 throw;
             }
         }

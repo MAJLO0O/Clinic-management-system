@@ -1,14 +1,9 @@
-﻿using MedicalData.Infrastructure.DTOs;
-using MedicalData.Infrastructure.Repositories;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
+﻿using MedicalData.Infrastructure.Repositories;
 using System.Text.Encodings.Web;
 using System.Text.Json;
-using System.Threading.Tasks;
-using Npgsql;
-using DataGenerator.Data;
+using System.IO.Compression;
+using Microsoft.Extensions.Configuration;
+using MedicalData.Export.Manifest;
 namespace MedicalData.Export.Services
 
 {
@@ -27,13 +22,14 @@ namespace MedicalData.Export.Services
         private readonly PaymentStatusRepository _paymentStatusRepository;
         private readonly PatientRepository _patientRepository;
         private readonly SpecializationRepository _specializationRepository;
-        public ExportDataService(string connectionString, ExportDataRepository exportDataRepository,
+        private readonly ExportManifestBuilder _manifestBuilder;
+        public ExportDataService(IConfiguration configuration, ExportDataRepository exportDataRepository,
             AppointmentRepository appointmentRepository, AppointmentStatusRepository appointmentStatusRepository,
             BranchRepository branchRepository, DoctorRepository doctorRepository, DoctorSpecializationRepository doctorSpecializationRepository,
             MedicalRecordRepository medicalRecordRepository, PaymentMethodRepository paymentMethodRepository,
-            PaymentRepository paymentRepository, PatientRepository patientRepository, SpecializationRepository specializationRepository, PaymentStatusRepository paymentStatusRepository)
+            PaymentRepository paymentRepository, PatientRepository patientRepository, SpecializationRepository specializationRepository, PaymentStatusRepository paymentStatusRepository, ExportManifestBuilder manifestBuilder)
         {
-            _connectionString = connectionString;
+            _connectionString = configuration.GetConnectionString("Postgres") ?? throw new Exception("Couldn't find connection string");
             _exportDataRepository = exportDataRepository;
             _appointmentRepository = appointmentRepository;
             _appointmentStatusRepository = appointmentStatusRepository;
@@ -46,6 +42,7 @@ namespace MedicalData.Export.Services
             _patientRepository = patientRepository;
             _specializationRepository = specializationRepository;
             _paymentStatusRepository = paymentStatusRepository;
+            _manifestBuilder = manifestBuilder;
         }
 
         public async Task ExportDataToJson()
@@ -60,24 +57,60 @@ namespace MedicalData.Export.Services
             var jsonString = JsonSerializer.Serialize(appointments, options);
             await File.WriteAllTextAsync("exported_appointments.json", jsonString);
         }
-        public async Task ExportAppointmentsAsync()
+        public async Task ExportAppointmentsLocalAsync()
         {
             Console.WriteLine("starting export");
-            using var connection = new NpgsqlConnection(_connectionString);
+            using var connection = DbConnectionFactory.CreateDbConnection(_connectionString);
+            var ct = CancellationToken.None;
             await connection.OpenAsync();
-            await _appointmentRepository.ExportAllDataFromAppointmet(connection);
-            await _appointmentStatusRepository.ExportAppointmentsStatusesAsync(connection);
-            await _branchRepository.ExportBranchesAsync(connection);
-            await _doctorRepository.ExportDoctorsAsync(connection);
-            await _doctorSpecializationRepository.ExportDoctorSpecializationAsync(connection);
-            await _medicalRecordRepository.ExportMedicalRecordAsync(connection);
-            await _patientRepository.ExportPatientsAsync(connection);
-            await _paymentMethodRepository.ExportPaymentMethodsAsync(connection);
-            await _paymentRepository.ExportPaymentsAsync(connection);
-            await _paymentStatusRepository.ExportPaymentStatusesAsync(connection);
-            await _patientRepository.ExportPatientsAsync(connection);
-            await _specializationRepository.ExportSpecializationsAsync(connection);
+            await _appointmentRepository.ExportToJsonLocalAsync(connection, ct);
+            await _appointmentStatusRepository.ExportToJsonLocalAsync(connection, ct);
+            await _branchRepository.ExportToJsonLocalAsync(connection,ct);
+            await _doctorRepository.ExportToJsonLocalAsync(connection,ct);
+            await _doctorSpecializationRepository.ExportToJsonLocalAsync(connection,ct);
+            await _medicalRecordRepository.ExportToJsonLocalAsync(connection, ct);
+            await _patientRepository.ExportToJsonLocalAsync(connection, ct);
+            await _paymentMethodRepository.ExportToJsonLocalAsync(connection, ct);
+            await _paymentRepository.ExportToJsonLocalAsync(connection, ct);
+            await _paymentStatusRepository.ExportToJsonLocalAsync(connection, ct);
+            await _specializationRepository.ExportToJsonLocalAsync(connection, ct);
             Console.WriteLine("export completed");
+        }
+        public async Task ExportZipAsync(Stream output, CancellationToken ct)
+        {
+            using var connection = DbConnectionFactory.CreateDbConnection(_connectionString);
+            await connection.OpenAsync(ct);
+            using var zip = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true);
+            
+
+
+            try
+            {
+                Console.WriteLine("export start");
+                ct.ThrowIfCancellationRequested();
+                await _appointmentRepository.AddAppointmentsToZipAsync(connection, zip, ct);
+                await _appointmentStatusRepository.AddAppointmetStasusesToZipAsync(connection, zip, ct);
+                await _branchRepository.AddBranchesToZipAsync(connection, zip, ct);
+                await _doctorRepository.AddDoctorsToZipAsync(connection, zip, ct);
+                await _doctorSpecializationRepository.AddToZipAsync(connection, zip, ct);
+                await _medicalRecordRepository.AddToZipAsync(connection, zip, ct);
+                await _patientRepository.AddToZipAsync(connection, zip, ct);
+                await _paymentMethodRepository.AddToZipAsync(connection, zip, ct);
+                await _paymentRepository.AddToZipAsync(connection, zip, ct);
+                await _paymentStatusRepository.AddToZipAsync(connection, zip, ct);
+                await _specializationRepository.AddToZipAsync(connection, zip, ct);
+                await _manifestBuilder.AddToZipAsync(zip, ct);
+                Console.WriteLine("export end");
+
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                throw;
+            }
         }
 
     }

@@ -1,14 +1,10 @@
-﻿using DataGenerator.Data;
-using DataGenerator.Generators;
+﻿using DataGenerator.Generators;
 using MedicalData.Domain.Models;
 using MedicalData.Infrastructure.DTOs;
 using MedicalData.Infrastructure.Repositories;
+using Microsoft.Extensions.Configuration;
 using Npgsql;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using System.Data;
 
 namespace DataGenerator.Services
 {
@@ -22,9 +18,9 @@ namespace DataGenerator.Services
         private readonly DoctorGenereator _doctorGenerator;
         private readonly DoctorSpecializationGenerator _doctorSpecializationGenerator;
 
-        public DoctorSeederService(string connectionString, SpecializationRepository specializationRepository, DoctorRepository doctorRepository, DoctorSpecializationRepository doctorSpecializationRepository, BranchRepository branchRepository, DoctorGenereator doctorGenerator, DoctorSpecializationGenerator doctorSpecializationGenerator)
+        public DoctorSeederService(IConfiguration configuration, SpecializationRepository specializationRepository, DoctorRepository doctorRepository, DoctorSpecializationRepository doctorSpecializationRepository, BranchRepository branchRepository, DoctorGenereator doctorGenerator, DoctorSpecializationGenerator doctorSpecializationGenerator)
         {
-            _connectionString = connectionString;
+            _connectionString = configuration.GetConnectionString("Postgres") ?? throw new InvalidOperationException("Coulnd't find connection string");
             _specializationRepository = specializationRepository;
             _doctorRepository = doctorRepository;
             _doctorSpecializationRepository = doctorSpecializationRepository;
@@ -32,17 +28,15 @@ namespace DataGenerator.Services
             _doctorGenerator = doctorGenerator;
             _doctorSpecializationGenerator = doctorSpecializationGenerator;
         }
-        public async Task SeedDoctorsAsync(int recordCount)
+        public async Task SeedDoctorsAsync(IDbConnection connection,IDbTransaction transaction,int recordCount)
         {
             List<Doctor> doctors = new List<Doctor>();
-            using NpgsqlConnection connection = new(_connectionString);
-            await connection.OpenAsync();
-            using var transaction = await connection.BeginTransactionAsync();
             try
             {
                 var globalIndex = await _doctorRepository.CountDoctorsAsync(connection,transaction);
                 var existingRelations = await _doctorSpecializationRepository.LoadExistingDoctorsSpecializations(connection, transaction);
                 var branchIds = await _branchRepository.branchIds(connection,transaction);
+                Console.WriteLine(recordCount);
                 while(recordCount>0)
                 {
                     
@@ -66,15 +60,13 @@ namespace DataGenerator.Services
                     var doctorIdsBatch = doctorIds.Skip(processsed).Take(5000).ToList();
                     newRelations = _doctorSpecializationGenerator.GenerateDoctorSpecializationRelation(doctorIdsBatch, specializations, existingRelations);
                     Console.WriteLine($"New Relations: {newRelations.Count}");
-                    await _doctorSpecializationRepository.InsertDoctorSpecializations(newRelations, connection, transaction);
+                    await _doctorSpecializationRepository.InsertDoctorSpecializations(connection, transaction, newRelations);
                     processsed +=5000;
                 }
-                await transaction.CommitAsync();
                 Console.WriteLine("Generated doctor");
             }
             catch (Exception ex)
             {
-                await transaction.RollbackAsync();
                 Console.WriteLine($"Error seeding doctors: {ex.Message}");
                 throw;
             }

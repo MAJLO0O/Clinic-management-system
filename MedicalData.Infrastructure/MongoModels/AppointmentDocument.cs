@@ -10,9 +10,8 @@ namespace MedicalData.Infrastructure.MongoModels
 {
     public class AppointmentDocument
     {
-        [BsonElement("id")]
+        [BsonId]
         public int Id { get; set; }
-
         [BsonElement("startingDateTime")]
         public DateTime StartingDateTime { get; set; }
 

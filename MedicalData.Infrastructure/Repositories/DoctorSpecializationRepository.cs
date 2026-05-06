@@ -5,6 +5,7 @@ using MedicalData.Infrastructure.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.IO.Compression;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
@@ -28,70 +29,130 @@ namespace MedicalData.Infrastructure.Repositories
         }
 
 
-        public async Task InsertDoctorSpecializations(List<DoctorSpecializationSnapshotDTO> newRelations, IDbConnection connection, IDbTransaction transaction)
+        public async Task InsertDoctorSpecializations(IDbConnection connection, IDbTransaction transaction, List<DoctorSpecializationSnapshotDTO> doctorSpecializations)
         {
             var sql = new StringBuilder();
             sql.Append("INSERT INTO doctor_specialization (doctor_id, specialization_id) VALUES ");
             var parameters = new DynamicParameters();
             var values = new List<string>();
             int i = 0;
-            foreach (var relation in newRelations)
+            foreach (var doctorSpecialization in doctorSpecializations)
             {
                 values.Add($"(@DoctorId{i}, @SpecializationId{i})");
 
-                parameters.Add($"DoctorId{i}", relation.DoctorId);
-                parameters.Add($"SpecializationId{i}", relation.SpecializationId);
+                parameters.Add($"DoctorId{i}", doctorSpecialization.DoctorId);
+                parameters.Add($"SpecializationId{i}", doctorSpecialization.SpecializationId);
                 i++;
             }
             sql.Append(string.Join(",", values));
-            await connection.ExecuteAsync(sql.ToString(), parameters, transaction: transaction);
+            await connection.ExecuteAsync( sql.ToString(), parameters, transaction: transaction);
         }
-        public async Task ExportDoctorSpecializationAsync(IDbConnection connection)
+
+        public async Task CreateDoctorSpecializations(IDbConnection connection, IDbTransaction transaction, int doctorId, List<int> specializationIds, CancellationToken ct)
+        {
+            var sql = new StringBuilder();
+            sql.Append("INSERT INTO doctor_specialization (doctor_id, specialization_id) VALUES ");
+            var parameters = new DynamicParameters();
+            var values = new List<string>();
+            int i = 0;
+            foreach (var specializationId in specializationIds)
+            {
+                values.Add($"(@DoctorId{i}, @SpecializationId{i})");
+
+                parameters.Add($"DoctorId{i}", doctorId);
+                parameters.Add($"SpecializationId{i}", specializationId);
+                i++;
+            }
+            sql.Append(string.Join(",", values));
+            await connection.ExecuteAsync(new CommandDefinition(sql.ToString(), parameters, transaction: transaction, cancellationToken: ct));
+        }
+
+        public async Task DeleteDoctorSpecializations(IDbConnection connection, IDbTransaction transaction, int doctorId, CancellationToken ct)
+        {
+            var sql = "delete from doctor_specialization where doctor_id = @DoctorId";
+                await connection.ExecuteAsync(new CommandDefinition(sql, new { DoctorId = doctorId }, transaction: transaction, cancellationToken: ct));
+        }
+
+
+
+        public async Task WriteDoctorSpecializationJsonAsync(IDbConnection connection, Stream stream, CancellationToken ct)
         {
             var sql = "select doctor_id as DoctorId,specialization_id as SpecializationId from doctor_specialization";
             using var reader = await connection.ExecuteReaderAsync(sql);
-            var path = Path.Combine(PathHelper.GetDataPath(), "exported_doctorspecialization.json");
-            await using var stream = File.Create(path);
             using var writer = new Utf8JsonWriter(stream);
 
             var doctorIdIndex = reader.GetOrdinal("DoctorId");
             var specializationIdIndex = reader.GetOrdinal("SpecializationId");
-            try
-            {
-                writer.WriteStartArray();
+             
+            writer.WriteStartArray();
                 while (reader.Read())
                 {
-                    var docorSPecialization = new DoctorSpecializationSnapshotDTO
-                    {
-                        DoctorId = reader.GetInt32(doctorIdIndex),
-                        SpecializationId = reader.GetInt32(specializationIdIndex)
-                    };
-                    JsonSerializer.Serialize(writer, docorSPecialization);
+                    ct.ThrowIfCancellationRequested();  
+                    var doctorSpecialization = MapToDoctorSpecialization(reader, doctorIdIndex, specializationIdIndex);
+                    JsonSerializer.Serialize(writer, doctorSpecialization);
                 }
                 writer.WriteEndArray();
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error during export: {ex.Message}");
-                throw;
-            }
-            finally
-            {
+             
                 await writer.FlushAsync();
-            }
+            
         }
-        public async Task ImportDoctorSpecializationAsync(IDbConnection connection)
+
+
+
+
+
+        public async Task ExportToJsonLocalAsync(IDbConnection connection, CancellationToken ct)
         {
-            var path = Path.Combine(PathHelper.GetDataPath(), "exported_doctorspecialization.json");
-            await using var json =  File.OpenRead(path);
+            var path = Path.Combine(Path.GetTempPath(), "exported_doctors_specializations.json");
+            await using var stream = File.Create(path);
+
+            await WriteDoctorSpecializationJsonAsync(connection, stream, ct);
+        }
+        public async Task AddToZipAsync(IDbConnection connection,ZipArchive zip, CancellationToken ct)
+        {
+            var entry = zip.CreateEntry("exported_doctors_specializations.json");
+            await using var entryStream = entry.Open();
+            await WriteDoctorSpecializationJsonAsync(connection, entryStream, ct);
+        }
+
+
+        public DoctorSpecializationSnapshotDTO MapToDoctorSpecialization(IDataReader reader, int doctorIdIndex, int specializationIdIndex)
+        {
+            return new DoctorSpecializationSnapshotDTO
+            {
+                DoctorId = reader.GetInt32(doctorIdIndex),
+                SpecializationId = reader.GetInt32(specializationIdIndex)
+            };
+        }
+
+
+        public async Task ImportFromJsonAsync(IDbConnection connection, IDbTransaction transaction, CancellationToken ct)
+        {
+            var path = Path.Combine(Path.GetTempPath(), "exported_doctors_specializations.json");
+            using var stream = File.OpenRead(path);
+
+            await ImportDoctorSpecializationAsync(connection, transaction, stream, ct);
+        }
+        public async Task ImportFromZipAsync(IDbConnection connection, IDbTransaction transaction, ZipArchive zip, CancellationToken cancellationToken)
+        {
+            var entry = zip.GetEntry("exported_doctors_specializations.json");
+            if (entry == null)
+                throw new InvalidOperationException("exported_doctors_specializations file is null");
+
+            using var stream = entry.Open();
+            await ImportDoctorSpecializationAsync(connection, transaction, stream, cancellationToken);
+
+        }
+
+        public async Task ImportDoctorSpecializationAsync(IDbConnection connection, IDbTransaction transaction, Stream stream, CancellationToken cancellationToken)
+        {
             var sql = new StringBuilder();
             sql.Append("INSERT INTO doctor_specialization (doctor_id, specialization_id) VALUES ");
             var batch = new List<string>();
             var parameters = new DynamicParameters();
-            using var transaction = connection.BeginTransaction();
             try
             {
-                await foreach (var item in JsonSerializer.DeserializeAsyncEnumerable<DoctorSpecializationSnapshotDTO>(json))
+                await foreach (var item in JsonSerializer.DeserializeAsyncEnumerable<DoctorSpecializationSnapshotDTO>(stream, cancellationToken: cancellationToken))
                 {
                     if (item != null)
                     {
@@ -102,7 +163,7 @@ namespace MedicalData.Infrastructure.Repositories
                         if (batch.Count == 5000)
                         {
                             sql.Append(string.Join(",", batch));
-                            await connection.ExecuteAsync(sql.ToString(),parameters, transaction);
+                            await connection.ExecuteAsync(new CommandDefinition( sql.ToString(),parameters, transaction, cancellationToken: cancellationToken));
                             batch.Clear();
                             sql = new StringBuilder();
                             sql.Append("INSERT INTO doctor_specialization (doctor_id, specialization_id) VALUES ");
@@ -113,9 +174,9 @@ namespace MedicalData.Infrastructure.Repositories
                 if(batch.Count > 0)
                 {
                     sql.Append(string.Join(",", batch));
-                    await connection.ExecuteAsync(sql.ToString(), parameters, transaction);
+                    await connection.ExecuteAsync(new CommandDefinition( sql.ToString(),parameters, transaction, cancellationToken: cancellationToken));
+
                 }
-                transaction.Commit();
                 Console.WriteLine("Imported doctor_specialization");
             }
             catch (Exception ex)
