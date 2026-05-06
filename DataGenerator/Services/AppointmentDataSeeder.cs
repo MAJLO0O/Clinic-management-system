@@ -1,14 +1,9 @@
-﻿using DataGenerator.Data;
-using DataGenerator.Generators;
+﻿using DataGenerator.Generators;
 using MedicalData.Domain.Models;
 using MedicalData.Infrastructure.Repositories;
+using Microsoft.Extensions.Configuration;
 using Npgsql;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Security.Cryptography.X509Certificates;
-using System.Text;
-using System.Threading.Tasks;
+using System.Data;
 
 namespace DataGenerator.Services
 {
@@ -27,13 +22,13 @@ namespace DataGenerator.Services
         private readonly PaymentStatusRepository _paymentStatusRepository;
         private readonly PaymentGenerator _paymentGenerator;
 
-        public AppointmentDataSeeder(string connectionString,
+        public AppointmentDataSeeder(IConfiguration configuration,
             AppointmentRepository appointmentRepository, AppointmentStatusRepository appointmentStatusRepository,
             AppointmentGenerator appointmentGenerator, DoctorRepository doctorRepository, PatientRepository patientRepository,
             MedicalRecordRepository medicalRecordRepository,MedicalRecordGenerator medicalRecordGenerator , PaymentRepository paymentRepository, PaymentMethodRepository paymentMethodRepository,
             PaymentStatusRepository paymentStatusRepository, PaymentGenerator paymentGenerator)
         {
-            _connectionString = connectionString;
+            _connectionString = configuration.GetConnectionString("Postgres") ?? throw new InvalidOperationException("Coulnd't find connection string");
             _appointmentRepository = appointmentRepository;
             _appointmentStatusRepository = appointmentStatusRepository;
             _appointmentGenerator = appointmentGenerator;
@@ -46,12 +41,9 @@ namespace DataGenerator.Services
             _paymentStatusRepository = paymentStatusRepository;
             _paymentGenerator = paymentGenerator;
         }
-        public async Task SeedAppointmentAsync(int recordCount)
+        public async Task SeedAppointmentAsync(IDbConnection connection,IDbTransaction transaction,int recordCount)
         {
             List<Appointment> appointments = new();
-            using NpgsqlConnection connection = new (_connectionString);
-            await connection.OpenAsync();
-            using var transaction = await connection.BeginTransactionAsync();
             try
             {
                 var existingAppointments = await _appointmentRepository.GetExistingAppointments(connection,transaction);
@@ -59,39 +51,51 @@ namespace DataGenerator.Services
                 var doctorIdsForAppointments = await _doctorRepository.GetExistingDoctorsIds(connection, transaction);
                 var patientIdsForAppointments = await _patientRepository.GetExistingPatientIds(connection, transaction);
 
-
-                for (int i = 0; i < recordCount; i++)
+                while(recordCount > 0)
                 {
-                    appointments.Add(_appointmentGenerator.GenerateAppointment(doctorIdsForAppointments, patientIdsForAppointments, appointmentStatusIds, existingAppointments));
+                    var chunkSize = Math.Min(5000, recordCount);
+                    for (int i = 0; i < chunkSize; i++)
+                    {
+                        appointments.Add(_appointmentGenerator.GenerateAppointment(doctorIdsForAppointments, patientIdsForAppointments, appointmentStatusIds, existingAppointments));
+                    }
+                        await _appointmentRepository.InsertAppointments(appointments, connection, transaction);
+                    appointments.Clear();
+                    recordCount -= chunkSize;
                 }
-                foreach(var chunk in appointments.Chunk(1000))
-                {
-                     await _appointmentRepository.InsertAppointments(chunk.ToList(), connection, transaction);
-                }
+                
 
 
                 var appointmentsWithoutMedicalRecord = await _appointmentRepository.GetAppointmentIdsWithoutMedicalRecordAndWhenTheyWereCreated(connection, transaction);
-                var medicalRecords = _medicalRecordGenerator.GenerateMedicalRecords(appointmentsWithoutMedicalRecord);
-                foreach (var chunk in medicalRecords.Chunk(1000))
+                int processed = 0;
+                while(processed < appointmentsWithoutMedicalRecord.Count)
                 {
-                    await _medicalRecordRepository.InsertMedicalRecords(chunk.ToList(), connection, transaction);
+                    var chunkSize = Math.Min(5000, appointmentsWithoutMedicalRecord.Count);
+
+                    var chunk = appointmentsWithoutMedicalRecord.Skip(processed).Take(chunkSize).ToList();
+                    var medicalRecords = _medicalRecordGenerator.GenerateMedicalRecords(chunk);
+                    await _medicalRecordRepository.InsertMedicalRecords(medicalRecords, connection, transaction);
+
+                    processed += chunkSize;
                 }
+
                 var appointmentsWithoutPayment = await _appointmentRepository.GetAppointmentsWithoutPayment(connection, transaction);
                 var paymentMethods = await _paymentMethodRepository.GetExistingPaymentMethodIds(connection, transaction);
                 var paymentStatusIds = await _paymentStatusRepository.GetExistingPaymentStatusIds(connection, transaction);
                 var usedPaymentNumber = await _paymentRepository.GetExistingPaymentNumbers(connection, transaction);
-                var payments = _paymentGenerator.GeneratePayments(appointmentsWithoutPayment, paymentMethods, paymentStatusIds, usedPaymentNumber);
-                
-                foreach (var chunk in payments.Chunk(1000))
+
+                processed = 0;
+                while(processed < appointmentsWithoutPayment.Count)
                 {
-                    await _paymentRepository.InsertPayments(chunk.ToList(), connection, transaction);
+                    var chunkSize = Math.Min(5000, appointmentsWithoutPayment.Count - processed);
+                    var chunk = appointmentsWithoutPayment.Skip(processed).Take(chunkSize).ToList();
+                    var payments = _paymentGenerator.GeneratePayments(chunk, paymentMethods, paymentStatusIds, usedPaymentNumber);
+                    await _paymentRepository.InsertPayments(payments, connection, transaction);
+                    processed += chunkSize;
                 }
-                await transaction.CommitAsync();
             }
 
             catch (Exception ex)
             {
-                await transaction.RollbackAsync();
                 Console.WriteLine($"Error seeding Appointments: {ex.Message}");
                 throw;
             }

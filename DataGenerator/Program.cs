@@ -1,10 +1,10 @@
-﻿
-using DataGenerator.Data;
-using DataGenerator.Generators;
+﻿using DataGenerator.Generators;
 using MedicalData.Domain.Models;
 using DataGenerator.Services;
 using Microsoft.Extensions.Configuration;
 using MedicalData.Infrastructure.Repositories;
+using System.Diagnostics;
+using MongoDB.Driver;
 
 int recordCount()
 {
@@ -30,7 +30,11 @@ var configuration = new ConfigurationBuilder()
     .AddJsonFile("appsettings.json", optional: false)
     .Build();
 
-string connectionString = configuration.GetConnectionString("Postgres");
+string connectionString = configuration.GetConnectionString("Postgres") ?? throw new Exception("Connection string not found"); ;
+string mongoConnectionString = configuration.GetConnectionString("MongoDb") ?? throw new Exception ("Mongo Connection string not found");
+var connection = DbConnectionFactory.CreateDbConnection(connectionString);
+MongoClient mongoClient = new MongoClient(mongoConnectionString);
+
 
 
 DoctorGenereator doctorGenerator = new();
@@ -52,17 +56,15 @@ MedicalRecordRepository medicalRecordRepository = new();
 PaymentMethodRepository paymentMethodRepository = new();
 PaymentStatusRepository paymentStatusRepository = new();
 PaymentRepository paymentRepository = new();
-
-
-
+MongoRepository mongoRepository = new(mongoClient);
 
 List<Patient> patients = new List<Patient>();
 List<Appointment> appointments = new List<Appointment>();
 
-DoctorSeederService doctorSeederService = new(connectionString, specializationRepository, doctorRepository, doctorSpecializationRepository,branchRepository ,doctorGenerator, doctorSpecializationGenerator);
-PatientDataSeeder patientDataSeeder = new(connectionString,patientGenerator,patientRepository);
-AppointmentDataSeeder appointmentDataSeeder = new(connectionString, appointmentRepository, appointmentStatusRepository, appointmentGenerator, doctorRepository, patientRepository, medicalRecordRepository,medicalRecordGenerator,paymentRepository ,paymentMethodRepository, paymentStatusRepository, paymentGenerator);
-IndexBenchmarkService indexBenchmarkService = new(connectionString);
+DoctorSeederService doctorSeederService = new(configuration, specializationRepository, doctorRepository, doctorSpecializationRepository,branchRepository ,doctorGenerator, doctorSpecializationGenerator);
+PatientDataSeeder patientDataSeeder = new(configuration,patientGenerator,patientRepository);
+AppointmentDataSeeder appointmentDataSeeder = new(configuration, appointmentRepository, appointmentStatusRepository, appointmentGenerator, doctorRepository, patientRepository, medicalRecordRepository,medicalRecordGenerator,paymentRepository ,paymentMethodRepository, paymentStatusRepository, paymentGenerator);
+IndexBenchmarkService indexBenchmarkService = new(configuration, mongoClient);
 DataCleanerService dataCleanerService = new(connectionString);
 
 
@@ -82,46 +84,102 @@ if (int.TryParse(input, out int choice))
         {
             
         case 1:
-                int count = recordCount();        
+            {
+                await connection.OpenAsync();
+                using var transaction = await connection.BeginTransactionAsync();
+                int count = recordCount();
                 Console.WriteLine("Inserting doctors...");
-                await doctorSeederService.SeedDoctorsAsync(count);
-                Console.WriteLine("Success!");
-
-        break;
-            
+                try
+                {
+                    await doctorSeederService.SeedDoctorsAsync(connection, transaction, count);
+                    Console.WriteLine("Success!");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error seeding doctors: {ex.Message}");
+                    transaction.Rollback();
+                }
+                break;
+            }    
         case 2:
-                count = recordCount();
+            {
+                await connection.OpenAsync();
+                using var transaction = await connection.BeginTransactionAsync();
+                int count = recordCount();
                 Console.WriteLine("Inserting patients...");
-                await patientDataSeeder.SeedPatientsAsync(count);
-                Console.WriteLine("Success!");
-        break;
+                try
+                {
+                    await patientDataSeeder.SeedPatientsAsync(connection, transaction, count);
+                    transaction.Commit();
+
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error seeding patients: {ex.Message}");
+                    transaction.Rollback();
+                    Console.WriteLine("Success!");
+                }
+                break;
+            }
                 
         case 3:
-                count = recordCount();
+            {
+                await connection.OpenAsync();
+                using var transaction = await connection.BeginTransactionAsync();
+                int count = recordCount();
                 Console.WriteLine("Creating Appointments...");
-                await appointmentDataSeeder.SeedAppointmentAsync(count);
+                try
+                {
+                    await appointmentDataSeeder.SeedAppointmentAsync(connection, transaction, count);
+                    transaction.Commit();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error seeding appointments: {ex.Message}");
+                    transaction.Rollback();
+                }
                 Console.WriteLine("Success!");
-        break;
+                break;
+            }
                 
         case 4:
+            {
+                await connection.OpenAsync();
+                using var transaction = await connection.BeginTransactionAsync();
+                Stopwatch stopwatch = Stopwatch.StartNew();
                 Console.WriteLine("Cleaning all data...");
                 await dataCleanerService.ClearAllAsync();
                 Console.WriteLine("Seeding data for benchmark... (number required is for number of doctors we will multiply it by 2 for patients and by 6 for appointments");
-                count = recordCount();
-                await doctorSeederService.SeedDoctorsAsync(count);
-                await patientDataSeeder.SeedPatientsAsync(2*count);
-                await appointmentDataSeeder.SeedAppointmentAsync(6*count);
-                Console.WriteLine($"Successfully added {count+2*count+6*count} records!");
-            break;
-                
+                int count = recordCount();
+                Console.WriteLine("Seeding doctors");
+                try
+                {
+                    await doctorSeederService.SeedDoctorsAsync(connection,transaction,count);
+                    await patientDataSeeder.SeedPatientsAsync(connection,transaction,2 * count);
+                    await appointmentDataSeeder.SeedAppointmentAsync(connection,transaction,5 * count);
+                    stopwatch.Stop();
+                    transaction.Commit();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error seeding data: {ex.Message}");
+                    transaction.Rollback();
+                }
+                Console.WriteLine($"Data seeded in {stopwatch.Elapsed.TotalSeconds} seconds.");
+                Console.WriteLine($"Successfully added {count + 2 * count + 5 * count} records!");
+
+                break;
+            } 
         case 5:
                 Console.WriteLine("Benchmark");
                 await indexBenchmarkService.BenchmarkWithIndexes();
                 await indexBenchmarkService.BenchmarkWithoutIndexes();
-        break;
+                await indexBenchmarkService.BenchmarkMongoWithIndexes();
+                await indexBenchmarkService.BenchmarkMongoWithoutIndexes();
+            break;
         
         default:
-                Console.WriteLine("Invalid choice. Please select 1 or 2.");
+                Console.WriteLine("Invalid choice. Please select one of the numbers");
         break;
         }
     }

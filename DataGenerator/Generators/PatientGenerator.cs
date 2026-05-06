@@ -30,7 +30,7 @@ namespace DataGenerator.Generators
             string firstName = firstNames[Random.Shared.Next(firstNames.Count)];
             string lastName = lastNames[Random.Shared.Next(lastNames.Count)];
             string pesel = GeneratorMethods.PeselGenerator();
-            DateTime dateOfBirth = GeneratorMethods.DateOfBirthGenerator();
+            DateOnly dateOfBirth = GeneratorMethods.DateOfBirthGenerator();
             while (!GeneratorMethods.GeneratedPesels.Add(pesel))
             {
                 pesel = GeneratorMethods.PeselGenerator();
@@ -40,8 +40,8 @@ namespace DataGenerator.Generators
                 FirstName = firstName,
                 LastName = lastName,
                 Pesel = pesel,
-                DateOfBirth = dateOfBirth,
-                PhoneNumber = GeneratorMethods.PhoneNumberGenerator(),
+                DateOfBirth = dateOfBirth.ToDateTime(new TimeOnly(0, 0)),
+                Phone = GeneratorMethods.PhoneNumberGenerator(),
                 Email = GeneratorMethods.EmailGenerator(firstName, lastName,index),
             };
         }

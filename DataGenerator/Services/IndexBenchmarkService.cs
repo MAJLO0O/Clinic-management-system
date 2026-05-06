@@ -1,26 +1,29 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Runtime.InteropServices.Marshalling;
-using System.Text;
-using System.Threading.Tasks;
-using DataGenerator.Data;
-using Dapper;
+﻿using Dapper;
 using Npgsql;
-using System.Data;
 using System.Diagnostics;
+using MongoDB.Driver;
+using MedicalData.Infrastructure.MongoModels;
+using MongoDB.Bson;
+using DataGenerator.DTO;
+using MedicalData.Infrastructure.Repositories;
+using Microsoft.Extensions.Configuration;
+
 namespace DataGenerator.Services
 {
     public class IndexBenchmarkService
     {
         private readonly string _connectionString;
-
-        public IndexBenchmarkService(string connectionString)
+        private readonly IMongoCollection<AppointmentDocument> _collection;
+        public IndexBenchmarkService(IConfiguration configuration, IMongoClient client)
         {
-            _connectionString = connectionString;
-        } 
-        public async Task CreateIndexAsync(IDbConnection connection)
+            _connectionString = configuration.GetConnectionString("Postgres") ?? throw new InvalidOperationException("Couldn't find connection string");
+            var mongoDatabase = client.GetDatabase("ClinicManagementSystem");
+            _collection = mongoDatabase.GetCollection<AppointmentDocument>("appointment");
+        }
+        public async Task CreateIndexAsync()
         {
+            using var connection = new NpgsqlConnection(_connectionString);
+            await connection.OpenAsync();
             var sql = "create index if not exists idx_appointment_starting_time on appointment (starting_date_time);";
             await connection.ExecuteAsync(sql);
 
@@ -34,8 +37,10 @@ namespace DataGenerator.Services
             await connection.ExecuteAsync(sql);
 
         }
-        public async Task DropIndexAsync(IDbConnection connection)
+        public async Task DropIndexAsync()
         {
+            using var connection = new NpgsqlConnection(_connectionString);
+            await connection.OpenAsync();
             var sql = "DROP INDEX if exists idx_appointment_starting_time;";
             await connection.ExecuteAsync(sql);
 
@@ -48,56 +53,160 @@ namespace DataGenerator.Services
             sql = "DROP INDEX if exists idx_payment_appointment;";
             await connection.ExecuteAsync(sql);
         }
-        
-        public async Task RunQueriesAsync(IDbConnection connection)
+
+        public async Task RunQueriesAsync()
         {
-            var sql = "select appointment_id from payment p inner join appointment a on p.appointment_id=a.id where p.appointment_id>10 and starting_date_time<NOW();";
+            using var connection = new NpgsqlConnection(_connectionString);
+            await connection.OpenAsync();
+            var sql = "select appointment_id from payment p inner join appointment a on p.appointment_id=a.id where p.appointment_id>10 and starting_date_time<'2026-01-01 00:00:00';";
             await connection.QueryAsync<int>(sql);
 
-            sql = "select id,starting_date_time from appointment where date(starting_date_time)='2022-10-08';";
-            await connection.QueryAsync<(int Id,DateTime Date)>(sql);
-            
-            sql = "select doctor_id,specialization_id from doctor_specialization where doctor_id=10 and specialization_id=12";
+            sql = "UPDATE appointment SET starting_date_time = starting_date_time + interval '1 day' WHERE starting_date_time > '2025-10-08 00:00:00' and starting_date_time < '2025-10-09 00:00:00';";
+            await connection.ExecuteAsync(sql);
+
+            sql = "select doctor_id,specialization_id from doctor_specialization where doctor_id=10 and specialization_id between 8 and 20";
             await connection.QueryAsync<(int doctorId, int specializationId)>(sql);
 
         }
-        public async Task BenchmarkWithIndexes()
+
+        public async Task RunNoSqlQueriesAsync()
         {
-            using NpgsqlConnection connection = new(_connectionString);
-            await connection.OpenAsync();
-            await CreateIndexAsync(connection);
-            await RunQueriesAsync(connection);
-            List<double> times = new();
-            for(int i = 0; i < 5; i++)
+
+            var filter = Builders<AppointmentDocument>.Filter.And(
+                Builders<AppointmentDocument>.Filter.Gt(a => a.Id, 10),
+                Builders<AppointmentDocument>.Filter.Lt(a => a.StartingDateTime, new DateTime(2026, 1, 1))
+            );
+            await _collection.Find(filter).ToListAsync();
+
+
+            var filterUpdate = Builders<AppointmentDocument>.Filter.And(
+                Builders<AppointmentDocument>.Filter.Gt(a => a.StartingDateTime, new DateTime(2025, 10, 8)),
+                Builders<AppointmentDocument>.Filter.Lt(a => a.StartingDateTime, new DateTime(2025, 10, 9))
+            );
+
+            var pipeline = new[]
             {
-            var stopwatch = Stopwatch.StartNew();
-            await RunQueriesAsync(connection);
-            stopwatch.Stop();
-            Console.WriteLine($"Time to complete with indexes {stopwatch.Elapsed.TotalMilliseconds} ms");
-                times.Add(stopwatch.Elapsed.TotalMilliseconds);
-            }
-            Console.WriteLine($"Average time with indexes is {times.Average()} ms");
+                new BsonDocument("$set", new BsonDocument
+                {
+                    { "startingDateTime", new BsonDocument
+                    {
+                        {  "$dateAdd", new BsonDocument
+                        {
+                            {"startDate","$startingDateTime" },
+                            {"amount", 1},
+                            {"unit", "day"}
+                        }
+                        }
+                    }
+                    }
+                })};
+
+            var update = new PipelineUpdateDefinition<AppointmentDocument>(pipeline);
+            await _collection.UpdateManyAsync(filter, update);
+
+            filter = Builders<AppointmentDocument>.Filter.And(
+                Builders<AppointmentDocument>.Filter.Eq(x => x.DoctorSnapshot.Id, 10),
+                Builders<AppointmentDocument>.Filter.AnyIn(
+                    x => x.DoctorSnapshot.Specializations,
+                    new[] { "Cariology", "Gynecology", "Dermatology" }));
+
+            await _collection.Find(filter).ToListAsync();
         }
-        public async Task BenchmarkWithoutIndexes()
+
+        public async Task CreateMongoIndexesAsync()
         {
-            using NpgsqlConnection connection = new(_connectionString);
-            await connection.OpenAsync();
-            await DropIndexAsync(connection);
-            await RunQueriesAsync(connection);
+            await _collection.Indexes.CreateOneAsync(
+                new CreateIndexModel<AppointmentDocument>(
+                    Builders<AppointmentDocument>.IndexKeys
+                    .Ascending(a => a.StartingDateTime)
+                    )
+                );
+
+            await _collection.Indexes.CreateOneAsync(
+                new CreateIndexModel<AppointmentDocument>(
+                    Builders<AppointmentDocument>.IndexKeys
+                    .Ascending(x => x.DoctorSnapshot.Id)
+                    .Ascending(x => x.DoctorSnapshot.Specializations)
+                    )
+                );
+
+        }
+
+        public async Task DropMongoIndexesAsync()
+        {
+            await _collection.Indexes.DropAllAsync();
+        }
+
+
+        public async Task<double> BenchmarkWithIndexes()
+        {
+            await CreateIndexAsync();
+            await RunQueriesAsync();
             List<double> times = new();
-            for(int i=0; i<5;i++)
+            for (int i = 0; i < 5; i++)
             {
                 var stopwatch = Stopwatch.StartNew();
-                await RunQueriesAsync(connection);
+                await RunQueriesAsync();
                 stopwatch.Stop();
-                Console.WriteLine($"Time to complete without indexes {stopwatch.Elapsed.TotalMilliseconds} ms");
+                Console.WriteLine($"Time to complete SQL with indexes {stopwatch.Elapsed.TotalMilliseconds} ms");
                 times.Add(stopwatch.Elapsed.TotalMilliseconds);
             }
-                Console.WriteLine($"Average time without indexes is {times.Average()} ms");
+            Console.WriteLine($"Average SQL time with indexes is {times.Average()} ms");
+            return times.Average();
         }
+        public async Task<double> BenchmarkWithoutIndexes()
+        {
+            using NpgsqlConnection connection = new(_connectionString);
+            await connection.OpenAsync();
+            await DropIndexAsync();
+            await RunQueriesAsync();
+            List<double> times = new();
+            for (int i = 0; i < 5; i++)
+            {
+                var stopwatch = Stopwatch.StartNew();
+                await RunQueriesAsync();
+                stopwatch.Stop();
+                Console.WriteLine($"Time to complete SQL without indexes {stopwatch.Elapsed.TotalMilliseconds} ms");
+                times.Add(stopwatch.Elapsed.TotalMilliseconds);
+            }
+            Console.WriteLine($"Average SQL time without indexes is {times.Average()} ms");
+            return times.Average();
+        }
+        public async Task<double> BenchmarkMongoWithoutIndexes()
+        {
+            await DropMongoIndexesAsync();
+            await RunNoSqlQueriesAsync();
+            List<double> times = new();
+            for (int i = 0; i < 5; i++)
+            {
+                var stopwatch = Stopwatch.StartNew();
+                await RunNoSqlQueriesAsync();
+                stopwatch.Stop();
+                Console.WriteLine($"Time to complete NoSQL without indexes: {stopwatch.Elapsed.TotalMilliseconds}ms");
+                times.Add(stopwatch.Elapsed.TotalMilliseconds);
+            }
+            Console.WriteLine($"Average NoSQL time without indexes is {times.Average()}ms");
+            return times.Average();
+        }
+        public async Task<double> BenchmarkMongoWithIndexes()
+        {
+            await CreateMongoIndexesAsync();
+            await RunNoSqlQueriesAsync();
+            List<double> times = new();
+            for (int i = 0; i < 5; i++)
+            {
+                var stopwatch = Stopwatch.StartNew();
+                await RunNoSqlQueriesAsync();
+                stopwatch.Stop();
+                Console.WriteLine($"Time to complete NoSql with Indexes: {stopwatch.Elapsed.TotalMilliseconds}ms ");
+                times.Add(stopwatch.Elapsed.TotalMilliseconds);
+            }
+            Console.WriteLine($"Average NoSql time with Indexes is {times.Average()}ms");
+            return times.Average();
+        }
+
         
-    }
-       
-        
+
+    }       
 }
 

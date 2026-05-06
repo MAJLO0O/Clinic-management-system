@@ -40,12 +40,12 @@ namespace DataGenerator.Generators
             string email = $"{firstName.ToLower()}.{lastName.ToLower()}{index}@example.com";
             return email;
         }
-        public static DateTime DateOfBirthGenerator()
+        public static DateOnly DateOfBirthGenerator()
         {
             int year = Random.Shared.Next(1950, 2000);
             int month = Random.Shared.Next(1, 13);
             int day = Random.Shared.Next(1, DateTime.DaysInMonth(year, month) + 1);
-            return new DateTime(year, month, day);
+            return new DateOnly(year, month, day);
         }
     }
 }

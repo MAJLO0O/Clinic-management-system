@@ -25,7 +25,7 @@ namespace DataGenerator.Generators
         public List<MedicalRecord> GenerateMedicalRecords(List<(int Id,DateTime CreatedAt)> appointmentIdsAndTheirCreatedAt)
         {
             var medicalRecords = new List<MedicalRecord>();
-            for (int i = 0; i < appointmentIdsAndTheirCreatedAt.Count; i++)
+            for (int i = 0; i < appointmentIdsAndTheirCreatedAt.Count ; i++)
             {
                 var item = appointmentIdsAndTheirCreatedAt[i];
                 medicalRecords.Add(new MedicalRecord

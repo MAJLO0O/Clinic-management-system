@@ -1,12 +1,8 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using Microsoft.Extensions.Configuration;
+﻿using Microsoft.Extensions.Configuration;
 using MedicalData.Infrastructure.Repositories;
 using MedicalData.Export.Services;
-using DataGenerator.Data;
+using System.Diagnostics;
+using MedicalData.Export.Manifest;
 namespace MedicalData.Export
 {
     internal class Program
@@ -17,10 +13,9 @@ namespace MedicalData.Export
             .SetBasePath(Directory.GetCurrentDirectory())
             .AddJsonFile("appsettings.json", optional: false)
             .Build();
-            string connectionString = configuration.GetConnectionString("Postgres") ?? throw new Exception("Connection string not found");
+            var connectionString = configuration.GetConnectionString("Postgres") ?? throw new Exception("Couldn't find connections string");
 
-
-            ExportDataRepository exportDataRepository = new(connectionString);
+            ExportDataRepository exportDataRepository = new(configuration);
             AppointmentRepository appointmentRepository = new();
             AppointmentStatusRepository appointmentStatusRepository = new();
             BranchRepository branchRepository = new();
@@ -32,16 +27,18 @@ namespace MedicalData.Export
             PaymentStatusRepository paymentStatusRepository = new();
             PatientRepository patientRepository = new();
             SpecializationRepository specializationRepository = new();
+            ExportManifestBuilder manifestBuilder = new();
 
-            ExportDataService exportDataService = new(connectionString,exportDataRepository,appointmentRepository,appointmentStatusRepository,
+            ExportDataService exportDataService = new(configuration,exportDataRepository,appointmentRepository,appointmentStatusRepository,
                 branchRepository,doctorRepository,doctorSpecializationRepository,medicalRecordRepository, paymentMethodRepository,
-                paymentRepository, patientRepository,specializationRepository, paymentStatusRepository);
+                paymentRepository, patientRepository,specializationRepository, paymentStatusRepository, manifestBuilder);
 
-
+            Stopwatch stopwatch = Stopwatch.StartNew();
             Console.WriteLine("Export started");
-
-            await exportDataService.ExportAppointmentsAsync();
-
+            
+            await exportDataService.ExportAppointmentsLocalAsync();
+            stopwatch.Stop();
+            Console.WriteLine($"Export completed in {stopwatch.Elapsed.TotalSeconds} seconds");
             Console.WriteLine("Export completed");
         }
     }

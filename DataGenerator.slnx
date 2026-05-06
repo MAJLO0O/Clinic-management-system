@@ -1,5 +1,7 @@
 <Solution>
   <Project Path="DataGenerator/DataGenerator.csproj" />
+  <Project Path="MedicalData.API/MedicalData.API.csproj" Id="0f34ce76-c8cb-4d75-b7c7-0f7d86e651dd" />
+  <Project Path="MedicalData.Aplication/MedicalData.Aplication.csproj" Id="8f762da8-1ae9-4d4c-b47a-8f0f39cc8a08" />
   <Project Path="MedicalData.Domain/MedicalData.Domain.csproj" Id="85baeca8-8bf2-4a64-88b4-d4125a913fee" />
   <Project Path="MedicalData.Export/MedicalData.Export.csproj" Id="88119bda-9ea0-4513-8c07-51d12d3b86dd" />
   <Project Path="MedicalData.Import/MedicalData.Import.csproj" Id="562787d4-177b-40a9-a83a-ef28a0e566a3" />

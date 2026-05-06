@@ -1,17 +1,19 @@
-﻿using System;
+﻿using Dapper;
+using MedicalData.Domain.Models;
+using MedicalData.Infrastructure.DTOs;
+using MedicalData.Infrastructure.Helpers;
+using SharpCompress.Compressors.Xz;
+using System;
 using System.Collections.Generic;
 using System.Data;
+using System.IO.Compression;
 using System.Linq;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
-using System.Threading.Tasks;
-using Dapper;
-using MedicalData.Domain.Models;
-using MedicalData.Infrastructure.DTOs;
-using MedicalData.Infrastructure.Helpers;
+using MedicalData.Infrastructure.ReadDTOs;
 
-namespace DataGenerator.Data
+namespace MedicalData.Infrastructure.Repositories
 {
     public class PaymentRepository
     {
@@ -41,20 +43,19 @@ namespace DataGenerator.Data
             sql.Append(string.Join(",", values));
             await connection.ExecuteAsync(sql.ToString(), parameters, transaction);
         }
+
         public async Task<HashSet<int>> GetExistingPaymentNumbers(IDbConnection connection, IDbTransaction transaction)
         {
             var sql = "select payment_number from payment";
             var paymentNumbers = await connection.QueryAsync<int>(sql, transaction: transaction);
             return paymentNumbers.ToHashSet();
         }
-        public async Task ExportPaymentsAsync(IDbConnection connection)
+        public async Task WritePaymentsJsonAsync(IDbConnection connection, Stream stream, CancellationToken ct)
         {
             var sql = "select id as Id, payment_number as PaymentNumber, amount as Amount, payment_method_id as PaymentMethodId, appointment_id as AppointmentId, payment_status_id as PaymentStatusId from payment";
 
             using var reader = await connection.ExecuteReaderAsync(sql);
-            var path = Path.Combine(PathHelper.GetDataPath(), "exported_payments.json");
-            await using var stream = File.Create(path);
-            using var writer = new Utf8JsonWriter(stream);
+            await using var writer = new Utf8JsonWriter(stream);
 
             var idIndex = reader.GetOrdinal("Id");
             var paymentNumberIndex = reader.GetOrdinal("PaymentNumber");
@@ -63,47 +64,73 @@ namespace DataGenerator.Data
             var appointmentIdIndex = reader.GetOrdinal("AppointmentId");
             var paymentStatusIdIndex = reader.GetOrdinal("PaymentStatusId");
 
-            try
-            {
                 writer.WriteStartArray();
                 while (reader.Read())
                 {
-                    var payment = new PaymentSnapshotDTO
-                    {
-                        Id = reader.GetInt32(idIndex),
-                        PaymentNumber = reader.GetInt32(paymentNumberIndex),
-                        Amount = reader.GetDecimal(amountIndex),
-                        PaymentMethodId = reader.IsDBNull(paymentMethodIdIndex) ? null : reader.GetInt32(paymentMethodIdIndex),
-                        AppointmentId = reader.GetInt32(appointmentIdIndex),
-                        PaymentStatusId = reader.GetInt32(paymentStatusIdIndex)
+                    ct.ThrowIfCancellationRequested();
 
-                    };
+                    var payment = MapToPayment(reader,idIndex,paymentNumberIndex,amountIndex,paymentMethodIdIndex,appointmentIdIndex,paymentStatusIdIndex);
                     JsonSerializer.Serialize(writer, payment);
                 }
                 writer.WriteEndArray();
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Failed exporting payments table {ex.Message} ");
-                throw;
-            }
-            finally
-            {
-                await writer.FlushAsync();
-            }
+             
+            await writer.FlushAsync();
+           
         }
-        public async Task ImportPaymentAsync(IDbConnection connection)
+        public async Task ExportToJsonLocalAsync(IDbConnection connection, CancellationToken ct)
         {
-            var path = Path.Combine(PathHelper.GetDataPath(), "exported_payments.json");
-            await using var stream = File.OpenRead(path);
+            var path = Path.Combine(Path.GetTempPath(), "exported_payments.json");
+            await using var stream = File.Create(path);
+
+            await WritePaymentsJsonAsync(connection, stream, ct);
+        }
+        public async Task AddToZipAsync(IDbConnection connection, ZipArchive zip, CancellationToken ct)
+        {
+            var entry = zip.CreateEntry("exported_payments.json");
+            await using var entryStream = entry.Open();
+
+            await WritePaymentsJsonAsync(connection, entryStream, ct);
+        }
+        public PaymentSnapshotDTO MapToPayment(IDataReader reader, int idIndex, int paymentNumberIndex, int amountIndex,
+            int paymentMethodIdIndex, int appointmentIdIndex, int paymentStatusIdIndex)
+        {
+            return new PaymentSnapshotDTO
+            {
+                Id = reader.GetInt32(idIndex),
+                PaymentNumber = reader.GetInt32(paymentNumberIndex),
+                Amount = reader.GetDecimal(amountIndex),
+                PaymentMethodId = reader.IsDBNull(paymentMethodIdIndex) ? null : reader.GetInt32(paymentMethodIdIndex),
+                AppointmentId = reader.GetInt32(appointmentIdIndex),
+                PaymentStatusId = reader.GetInt32(paymentStatusIdIndex)
+
+            };
+        }
+
+        public async Task ImportFromJsonAsync(IDbConnection connection, IDbTransaction transaction, CancellationToken cancellationToken)
+        {
+            var path = Path.Combine(Path.GetTempPath(), "exported_payments.json");
+            using var stream = File.OpenRead(path);
+
+            await ImportPaymentAsync(connection,transaction,stream,cancellationToken);
+        }
+
+        public async Task ImportFromZipAsync(IDbConnection connection, IDbTransaction transaction, ZipArchive zip, CancellationToken cancellationToken)
+        {
+            var entry = zip.GetEntry("exported_payments.json");
+            if (entry == null)
+                throw new FileNotFoundException("The entry exported_payments.json was not found in the zip archive.");
+            using var entryStream = entry.Open();
+            await ImportPaymentAsync(connection, transaction, entryStream, cancellationToken);
+        }
+        public async Task ImportPaymentAsync(IDbConnection connection, IDbTransaction transaction, Stream stream, CancellationToken cancellationToken)
+        {
             var sql = new StringBuilder();
             sql.Append("insert into payment (id, payment_number, amount, payment_method_id, appointment_id, payment_status_id) values ");
             var parameters = new DynamicParameters();
             var batch = new List<string>();
-            using var transaction = connection.BeginTransaction();
             try
             {
-                await foreach (var payment in JsonSerializer.DeserializeAsyncEnumerable<PaymentSnapshotDTO>(stream))
+                await foreach (var payment in JsonSerializer.DeserializeAsyncEnumerable<PaymentSnapshotDTO>(stream,cancellationToken: cancellationToken))
                 {
                     int i = batch.Count;
                     if (payment != null)
@@ -119,7 +146,7 @@ namespace DataGenerator.Data
                         if (batch.Count == 5000)
                         {
                             sql.Append(string.Join(",", batch));
-                            await connection.ExecuteAsync(sql.ToString(), parameters, transaction);
+                            await connection.ExecuteAsync(new CommandDefinition(sql.ToString(), parameters, transaction, cancellationToken: cancellationToken));
                             batch.Clear();
                             sql = new StringBuilder();
                             sql.Append("insert into payment (id, payment_number, amount, payment_method_id, appointment_id, payment_status_id) values ");
@@ -130,17 +157,41 @@ namespace DataGenerator.Data
                 if (batch.Count > 0)
                 {
                     sql.Append(string.Join(",", batch));
-                    await connection.ExecuteAsync(sql.ToString(), parameters, transaction);
+                    await connection.ExecuteAsync(new CommandDefinition(sql.ToString(), parameters, transaction, cancellationToken: cancellationToken));
                 }
-                transaction.Commit();
+                        var resetSequenceSql = @"SELECT setval(
+                        pg_get_serial_sequence('payment','id'),
+                        COALESCE((SELECT MAX(id) FROM payment),1),
+                        true
+                    );";
+                await connection.ExecuteAsync(new CommandDefinition(resetSequenceSql, transaction: transaction, cancellationToken: cancellationToken));
+
                 Console.WriteLine("Imported payment");
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Failed importing payments table {ex.Message} ");
-                transaction.Rollback();
                 throw;
             }
-        } 
+        }
+        public async Task<PagedResult<ReadPaymentDTO>> GetPaymentsAsync(IDbConnection connection, int lastId, int pageSize, CancellationToken cancellationToken)
+        {
+            const string sql = @"select p.id as Id, p.payment_number as PaymentNumber,
+            p.amount as Amount, pm.method as Method,
+            a.starting_date_time as AppointmentStartingDateTime, ps.status as Status,
+            coalesce(d.first_name, '') || ' ' || coalesce(d.last_name, '') as DoctorFullName,
+            coalesce(pt.first_name, '') || ' ' || coalesce(pt.last_name, '') as PatientFullName
+            from payment p
+            left join appointment a on p.appointment_id = a.id
+            left join patient pt on a.patient_id = pt.id
+            left join doctor d on a.doctor_id = d.id
+            left join payment_method pm on p.payment_method_id = pm.id
+            left join payment_status ps on p.payment_status_id = ps.id
+            where p.id > @LastId
+            order by p.id asc
+            limit @pageSizePlusOne";
+            var result = (await connection.QueryAsync<ReadPaymentDTO>(new CommandDefinition(sql, new { LastId = lastId, pageSizePlusOne = pageSize + 1 }, cancellationToken: cancellationToken))).ToList();
+            return PaginationHelper.BuildPagedResult(result, pageSize, x => x.Id);
+        }
     }
 }

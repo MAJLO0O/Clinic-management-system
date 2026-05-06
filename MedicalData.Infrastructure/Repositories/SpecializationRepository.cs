@@ -1,13 +1,8 @@
 ﻿using Dapper;
-using System;
-using System.Collections.Generic;
-using System.Data;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Text.Json;
-using MedicalData.Infrastructure.Helpers;
 using MedicalData.Infrastructure.DTOs;
+using System.Data;
+using System.IO.Compression;
+using System.Text.Json;
 
 namespace MedicalData.Infrastructure.Repositories
 {
@@ -19,52 +14,77 @@ namespace MedicalData.Infrastructure.Repositories
             var specializationIds = await connection.QueryAsync<int>(sql, transaction: transaction);
             return specializationIds.ToList();
         }
-        public async Task ExportSpecializationsAsync(IDbConnection connection)
+        public async Task WriteSpecializationsJsonAsync(IDbConnection connection, Stream stream, CancellationToken ct)
         {
             var sql = "select id as Id, name as Name from specialization";
 
             using var reader = await connection.ExecuteReaderAsync(sql);
-            var path = Path.Combine(PathHelper.GetDataPath(), "exported_specializations.json");
-            await using var stream = File.Create(path);
-            using var writer = new Utf8JsonWriter(stream);
+            await using var writer = new Utf8JsonWriter(stream);
 
             var idIndex = reader.GetOrdinal("Id");
             var nameIndex = reader.GetOrdinal("Name");
 
-            try
+            writer.WriteStartArray();
+            while (reader.Read())
             {
-                writer.WriteStartArray();
-                while (reader.Read())
-                {
-                    var specialization = new
-                    {
-                        Id = reader.GetInt32(idIndex),
-                        Name = reader.GetString(nameIndex)
-                    };
-                    JsonSerializer.Serialize(writer, specialization);
-                }
-                writer.WriteEndArray();
+                ct.ThrowIfCancellationRequested();
+
+                var specialization = MapToSpecialization(reader, idIndex, nameIndex);
+                JsonSerializer.Serialize(writer, specialization);
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error exporting specializations: {ex.Message}");
-                throw;
-            }
-            finally
-            {
-                await writer.FlushAsync();
-            }
+            writer.WriteEndArray();
+
+            await writer.FlushAsync();
+
         }
-        public async Task ImportSpecializationAsync(IDbConnection connection)
+        public async Task ExportToJsonLocalAsync(IDbConnection connection, CancellationToken ct)
         {
-            var path = Path.Combine(PathHelper.GetDataPath(), "exported_specializations.json");
-            var json = await File.ReadAllTextAsync(path);
+            var path = Path.Combine(Path.GetTempPath(), "exported_specializations.json");
+            await using var stream = File.Create(path);
 
-            var specializations = JsonSerializer.Deserialize<List<SpecializationSnapshotDTO>>(json);
+            await WriteSpecializationsJsonAsync(connection, stream, ct);
+        }
+        public async Task AddToZipAsync(IDbConnection connection, ZipArchive zip, CancellationToken ct)
+        {
+            var entry = zip.CreateEntry("exported_specializations.json");
+            await using var entryStream = entry.Open();
 
-            if (specializations == null)
+            await WriteSpecializationsJsonAsync(connection, entryStream, ct);
+        }
+        public SpecializationSnapshotDTO MapToSpecialization(IDataReader reader, int idIndex, int nameIndex)
+        {
+            return new SpecializationSnapshotDTO
             {
-                throw new Exception("No specializations found in the JSON file.");
+                Id = reader.GetInt32(idIndex),
+                Name = reader.GetString(nameIndex)
+            };
+        }
+        public async Task ImportFromJsonAsync(IDbConnection connection, IDbTransaction transaction, CancellationToken ct)
+        {
+            var path = Path.Combine(Path.GetTempPath(), "exported_specializations.json");
+            using var stream = File.OpenRead(path);
+
+            await ImportSpecializationAsync(connection, transaction, stream, ct);
+        }
+        public async Task ImportFromZipAsync(IDbConnection connection, IDbTransaction transaction, ZipArchive zip, CancellationToken ct)
+        {
+            var entry = zip.GetEntry("exported_specializations.json");
+            if (entry == null)
+            {
+                throw new FileNotFoundException("The file 'exported_specializations.json' was not found in the ZIP archive.");
+            }
+            await using var entryStream = entry.Open();
+            await ImportSpecializationAsync(connection, transaction, entryStream, ct);
+        }
+
+        public async Task ImportSpecializationAsync(IDbConnection connection, IDbTransaction transaction, Stream stream, CancellationToken ct)
+        {
+
+            var specializations = await JsonSerializer.DeserializeAsync<List<SpecializationSnapshotDTO>>(stream, cancellationToken: ct);
+
+            if (specializations == null || !specializations.Any())
+            {
+                throw new InvalidOperationException("Specializations file is empty or invalid.");
             }
             try
             {
@@ -72,14 +92,14 @@ namespace MedicalData.Infrastructure.Repositories
                 {
                     var sql = "insert into specialization (id, name) values (@Id, @Name)";
 
-                    await connection.ExecuteAsync(sql, specialization);
+                    await connection.ExecuteAsync(new CommandDefinition(sql, specialization, transaction: transaction, cancellationToken: ct));
                 }
                 var resetSequenceSql = @"SELECT setval(
                     pg_get_serial_sequence('specialization','id'),
                     COALESCE((SELECT MAX(id) FROM specialization),1),
                     true
                     );";
-                await connection.ExecuteAsync(resetSequenceSql);
+                await connection.ExecuteAsync(new CommandDefinition(resetSequenceSql, transaction: transaction, cancellationToken: ct));
                 Console.WriteLine("Imported specialization");
             }
             catch (Exception ex)
@@ -88,6 +108,15 @@ namespace MedicalData.Infrastructure.Repositories
                 throw;
 
             }
+        }
+
+
+
+        public async Task<List<SpecializationSnapshotDTO>> GetSpecializationsAsync(IDbConnection connection, CancellationToken ct)
+        {
+            var sql = "select id as Id, name as Name from specialization";
+            var specializations = await connection.QueryAsync<SpecializationSnapshotDTO>(new CommandDefinition(sql,cancellationToken: ct));
+            return specializations.ToList();
         }
     }
 }

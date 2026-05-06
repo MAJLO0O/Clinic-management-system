@@ -1,0 +1,17 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DataGenerator\DataGenerator.csproj" />
+    <ProjectReference Include="..\MedicalData.Domain\MedicalData.Domain.csproj" />
+    <ProjectReference Include="..\MedicalData.Export\MedicalData.Export.csproj" />
+    <ProjectReference Include="..\MedicalData.Import\MedicalData.Import.csproj" />
+    <ProjectReference Include="..\MedicalData.Infrastructure\MedicalData.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -28,7 +28,7 @@ namespace DataGenerator.Generators
                 FirstName = firstName,
                 LastName = lastName,
                 Pesel = pesel,
-                PhoneNumber = GeneratorMethods.PhoneNumberGenerator(),
+                Phone = GeneratorMethods.PhoneNumberGenerator(),
                 Email = GeneratorMethods.EmailGenerator(firstName,lastName,index),
                 BranchId = branchId[Random.Shared.Next(branchId.Count)]
             };

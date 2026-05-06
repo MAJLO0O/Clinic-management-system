@@ -9,25 +9,17 @@ namespace MedicalData.Domain.Models
 {
     public class Doctor
     {
-        [Required]
-        [MinLength(2),MaxLength(50)]
+        public int Id { get; set; }
         public string FirstName { get; set; }
-        [Required]
-        [MinLength(2),MaxLength(50)]
         public string LastName { get; set; }
-        [Required]
-        [StringLength(11)]
         public string Pesel { get; set; }
-        [Required]
-        [MinLength(9), MaxLength(15)]
-        public string PhoneNumber { get; set; }
-        [Required]
-        [MinLength(5),MaxLength(100)]
+        public string Phone { get; set; }
         public string Email { get; set; }
-        [Required]
-        public DateTime CreatedAt { get; set; }
         public DateTime? DeletedAt { get; set; }
-        [Required]
+        public DateTime CreatedAt { get; set; }
+
         public int BranchId { get; set; }
+
+        public List<Specialization> Specializations { get; set; }
     }
 }
